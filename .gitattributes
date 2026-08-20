@@ -1,0 +1,13 @@
+# ROS nodes, launch files and build metadata run primarily on Linux.
+# Keep every detected text file as LF in both the repository and checkout.
+* text=auto eol=lf
+
+# Generated maps and recorded sensor data are binary, never line-normalized.
+*.bag binary
+*.bin binary
+*.pcd binary
+*.pgm binary
+
+# Preserve native endings if Windows-only helper scripts are added later.
+*.bat text eol=crlf
+*.cmd text eol=crlf
