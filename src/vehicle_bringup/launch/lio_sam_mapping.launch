@@ -1,0 +1,38 @@
+<launch>
+  <!--
+    Hardware-calibrated LIO-SAM frontend. Offline mapping uses the default TF
+    ownership; the optional fixed-map localization wrapper disables only
+    map->odom so its NDT matcher can own that transform. The real config must
+    define N_SCAN, Horizon_SCAN, range, noise, timing and extrinsics.
+  -->
+  <arg name="config_file" default="$(find lio_sam)/config/params.yaml"/>
+  <arg name="node_output" default="screen"/>
+  <arg name="point_cloud_topic" default="/points_raw"/>
+  <arg name="imu_topic" default="/imu/data"/>
+  <arg name="imu_time_offset_s" default="0.0"/>
+  <!-- Keep the simulation/controller contract: incremental output is
+       /odometry/imu_incremental. LIO-SAM appends "_incremental". -->
+  <arg name="odom_topic_base" default="/odometry/imu"/>
+  <arg name="gps_topic" default="/unused/gps_odometry"/>
+  <arg name="lidar_frame" default="velodyne"/>
+  <arg name="base_frame" default="base_link"/>
+  <arg name="odom_frame" default="odom"/>
+  <arg name="map_frame" default="map"/>
+  <arg name="publish_map_to_odom_tf" default="true"/>
+
+  <rosparam file="$(arg config_file)" command="load"/>
+  <param name="lio_sam/pointCloudTopic" value="$(arg point_cloud_topic)"/>
+  <param name="lio_sam/imuTopic" value="$(arg imu_topic)"/>
+  <param name="lio_sam/imuTimeOffset" value="$(arg imu_time_offset_s)"/>
+  <param name="lio_sam/odomTopic" value="$(arg odom_topic_base)"/>
+  <param name="lio_sam/gpsTopic" value="$(arg gps_topic)"/>
+  <param name="lio_sam/lidarFrame" value="$(arg lidar_frame)"/>
+  <param name="lio_sam/baselinkFrame" value="$(arg base_frame)"/>
+  <param name="lio_sam/odometryFrame" value="$(arg odom_frame)"/>
+  <param name="lio_sam/mapFrame" value="$(arg map_frame)"/>
+  <param name="lio_sam/publish_tf" value="$(arg publish_map_to_odom_tf)"/>
+
+  <include file="$(find lio_sam)/launch/include/module_loam.launch">
+    <arg name="node_output" value="$(arg node_output)"/>
+  </include>
+</launch>

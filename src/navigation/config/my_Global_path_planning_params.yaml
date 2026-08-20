@@ -1,0 +1,308 @@
+# ============================================================
+#  Hybrid A* 全局路径规划参数
+#
+#  创新点 2: 融合地形可通行性评估的分层 Hybrid A* 全局路径规划
+#    - 加载 TCM1 地形代价地图，利用梯度分量按航向 θ 在线计算方向相关代价
+#    - 粗-细两级搜索: 粗地图(1.0m)定走廊 → 细地图(0.2m)走廊内精搜索
+#    - 履带差速运动学约束 + Dubins 曲线解析展开
+# ============================================================
+#
+#  车辆参数 (来自 car_base.urdf.xacro):
+#    车体尺寸:   1.70m × 0.97m × 2.17m
+#    履带中心距:  1.28m (左轮 y=0.631, 右轮 y=-0.645)
+#    轮径:       0.363m
+#    整车质量:   1300 kg
+#    footprint:  [-0.85,±0.64] → inscribed_radius = 0.64m
+# ============================================================
+
+HybridAStarPlanner:
+  # 0.8m 只给当前车辆约12%的稳态转向余量，角速度建立阶段无法稳定跟踪。
+  # 1.2m 与 MPC 的 0.15m/s 弯道速度及约0.21rad/s 有效角速度匹配。
+  min_turning_radius: 1.2
+  step_size: 0.6
+  heading_bins: 72
+  num_steering_angles: 7
+  max_iterations: 300000
+  goal_xy_tolerance: 0.5
+  # 仅作为末端航向误差的诊断参考；不再作为离散搜索节点的硬判定门槛。
+  goal_yaw_tolerance: 0.10
+  # Dubins仅用于目标附近的末端可达连接。禁止从起点/远距离直连，
+  # 避免在Hybrid A*比较地形累计代价之前接受一条近似直线路径。
+  # 履带车起点和终点均可原地调整航向，几何路径完全由 Hybrid A* 搜索。
+  # 关闭 Dubins，避免终点为满足指定航向生成额外回钩或长圆弧。
+  enable_dubins_shot: false
+  dubins_shot_max_distance: 3.0
+  # 固定目标航向导致长距离Dubins圆弧越界时，允许先到达目标位置，
+  # 再由履带车原地旋转到用户指定航向。
+  # Never trade away the commanded terminal yaw and defer it to an in-place
+  # rotation. This also keeps the intended behaviour if Dubins is re-enabled.
+  allow_goal_yaw_relaxation: false
+  goal_yaw_relaxation_penalty: 0.2
+  # 保留目标切向要求，但采用软代价提前引导，而非用航向阈值拒绝近终点节点。
+  # 最终精确航向由曲率/碰撞校验后的 Hermite 过渡实现，不依赖原地旋转。
+  enforce_terminal_goal_yaw: true
+  # Reserve enough distance for a curvature-limited tangent transition rather
+  # than attaching a fixed straight segment to a differently oriented path.
+  terminal_approach_distance: 2.5
+  # 在末端前 6m 内由“朝向搜索目标”连续过渡到“目标指定航向”。
+  terminal_heading_blend_distance: 6.0
+  # 将剩余航向误差折算为等效路径代价；4.0 可使 45deg 误差约增加 3.77m，
+  # 足以促使搜索提前转向，但不会把某个离散航向设为成败条件。
+  terminal_heading_soft_weight: 4.0
+  # 首次进入位置容差后继续比较少量候选节点，再选择路径代价、航向误差和
+  # 横向残差综合最小者；避免为了精确角度继续扩展二十余万个节点。
+  terminal_candidate_settle_iterations: 1500
+  # Cubic Hermite endpoint derivative magnitude relative to connector chord.
+  terminal_transition_tangent_scale: 1.2
+  # Minimum splice backtrack. Runtime may extend this to
+  # terminal_approach_distance + 2*min_turning_radius so a physically feasible
+  # tangent is not rejected only because the fixed post-processing window is
+  # shorter than the vehicle's turning geometry.
+  terminal_transition_max_backtrack: 2.0
+  # 远距离Dubins只作为带地形累计代价的候选；降低评估频率控制规划耗时。
+  analytic_expansion_skip: 25
+  # Require a Hybrid A* prefix before any far-distance analytic connection.
+  analytic_min_prefix_distance: 6.0
+  # Reject Dubins candidates that cross excessive mean or peak terrain risk.
+  analytic_max_mean_terrain_cost: 0.30
+  analytic_max_peak_terrain_cost: 0.55
+  allow_reverse: false
+  # 履带车允许起点原地调整航向，避免初始朝向与目标相反时用大回环调头。
+  # 只在起点增加旋转候选，中途仍保持原 Hybrid A* 运动约束。
+  # Preserve the measured vehicle yaw at the beginning of the global path.
+  # The first metre is straight; Hybrid A* then changes heading continuously.
+  allow_start_in_place_rotation: false
+  start_straight_distance: 1.0
+  reverse_penalty: 2.0
+  direction_change_penalty: 0.5
+  obstacle_penalty: 2.0
+  curvature_penalty: 0.8
+  # Fine-search steering continuity: penalize changes between adjacent
+  # normalized motion curvatures.  This is separate from curvature_penalty,
+  # which only penalizes the magnitude of one primitive's curvature.
+  # 0.4 makes one adjacent steering-bin change cost about 0.044 (roughly 7%
+  # of a 0.6m primitive), enough to break rough-path ties without dominating
+  # length/risk or recreating the long-distance search failure.
+  fine_curvature_change_weight: 0.4
+  # 硬障碍到车辆中心的最小规划距离。矩形车体外接半径约1.06m；
+  # 1.35m额外保留约0.29m，用于覆盖定位/跟踪误差且不改变地形风险软代价。
+  min_clearance: 1.35
+
+  # ===== 沙地通行代价 (TCM1 格式) =====
+  terrain_cost_file: ""
+  terrain_cost_coarse_file: ""
+
+  # 地形代价权重: tc × weight × step 加到扩展代价
+  # 5.0 × 0.28(中等坡) × 0.6(step) = 0.84, 约为基础步长代价的 1.4 倍
+  # 无硬约束，纯靠代价引导规划器自主选择最低代价路径
+  terrain_cost_weight: 12.0
+
+  # 自动地形折中模式：
+  # 先生成从最短路径到低风险路径的一组候选，再以路径长度、平均物理风险、
+  # 峰值物理风险建立 Pareto 前沿并自动选择膝点。此模式不使用上面的固定权重
+  # 决定最终路线；关闭后立即恢复原有单权重 Hybrid A*，便于 A/B 对比和回退。
+  pareto_terrain_mode: true
+  # The high-risk threshold is derived from this quantile of valid terrain
+  # cells. It measures exposure and provides the map-adaptive reference for
+  # the robust safety gate below; calibrated collision limits remain separate.
+  pareto_high_risk_quantile: 0.8
+  # Objective-anchor strength is dimensionless and map adaptive.  A value of
+  # 3 means that the measured risk/exposure of the shortest route is given
+  # enough leverage to form a genuine terrain-risk extreme, while the final
+  # route is still chosen from the non-dominated set rather than by this value.
+  pareto_anchor_strength: 3.0
+  # Every fine corridor uses one identical robust objective. The total
+  # dimensionless strength is shared by mean risk, high-risk exposure and
+  # pointwise r^p risk, and is normalized from the shortest coarse anchor.
+  # Slightly stronger than the nav_23/nav_24 baseline.  The fine objective
+  # now gives mean risk the same share as sustained high-risk exposure, while
+  # retaining the pointwise term that produced the low peak-risk result.
+  fine_risk_strength: 2.8
+  # Fine-corridor Weighted-A* key only; it does not change the terrain cost or
+  # Pareto objectives.  nav_7 showed that 1.10 made short_04 shorter but raised
+  # peak risk from 0.799 to 0.896.  1.05 retains most of the expansion-order
+  # speedup with a tighter scalar-cost bound and less path-quality drift;
+  # set to 1.0 for exact legacy expansion order.
+  fine_heuristic_weight: 1.05
+  # Disconnected/dead-end fine corridors previously consumed the complete
+  # 300k expansion budget after their closest distance stopped improving.
+  # This guard applies only inside a coarse corridor; coarse search and the
+  # full-map fallback retain the complete budget.
+  fine_stagnation_min_iterations: 150000
+  fine_stagnation_window_iterations: 75000
+  fine_stagnation_progress_m: 0.10
+  # Primitive samples remain no farther apart than one costmap cell.  The
+  # vehicle-clearance map expands obstacles by 1.35 m, so a one-cell interval
+  # cannot tunnel through the blocked band.  The fine terrain layer is coarser
+  # than the costmap and is still oversampled; compared with 0.75 this removes
+  # another 25% of repeated collision/terrain queries without changing the
+  # feasible corridor or any Pareto objective.
+  primitive_collision_check_fraction: 1.0
+  # A high-order local penalty suppresses isolated dangerous path points while
+  # remaining smoother and more noise tolerant than a hard peak-only cost.
+  pointwise_risk_exponent: 4.0
+  # CVaR audit/selection uses the riskiest 10% of path arc length.
+  pareto_tail_fraction: 0.10
+  # Direction-dependent body attitude is evaluated from the terrain gradient
+  # in the candidate path frame.  Soft penalties start early enough to avoid
+  # sustained side slope; only the generous limits below are hard feasibility
+  # constraints, so moderate terrain does not make the search incomplete.
+  attitude_risk_enabled: true
+  pitch_soft_start_deg: 10.0
+  roll_soft_start_deg: 8.0
+  pitch_hard_limit_deg: 40.0
+  roll_hard_limit_deg: 30.0
+  pitch_risk_weight: 1.0
+  # Lateral attitude is weighted more strongly because it drives cross-slope
+  # drift and rollover, the remaining weakness observed in nav_13.
+  # Prefer a low lateral attitude without turning roll into a hard constraint.
+  # This is intentionally a small increase so long-distance completeness is
+  # preserved while the lowest-roll coarse channel is refined explicitly.
+  roll_risk_weight: 1.8
+  attitude_penalty_exponent: 2.0
+  # A second safety-extreme search is not run unconditionally. It is triggered
+  # only when coarse search leaves one candidate whose peak terrain risk or
+  # body attitude is still severe. The objective is normalized by the current
+  # map/path statistics, so the same settings remain meaningful on new maps.
+  adaptive_safe_candidate_enabled: true
+  # Effective peak trigger = min(this cap, map high-risk quantile + margin).
+  adaptive_safe_peak_risk_trigger: 0.90
+  adaptive_safe_peak_quantile_margin: 0.20
+  adaptive_safe_pitch_trigger_deg: 20.0
+  adaptive_safe_roll_trigger_deg: 16.0
+  adaptive_safe_risk_scale: 1.5
+  adaptive_safe_attitude_scale: 2.0
+  # No terrain-risk threshold prefilters Pareto candidates. Obstacles,
+  # curvature and clearance remain hard feasibility constraints; mean, peak,
+  # tail and exposure risk are all retained as Pareto objectives. The safety
+  # parameters below remain only for legacy evaluator compatibility/auditing.
+  pareto_safety_filter_enabled: false
+  pareto_max_high_risk_fraction: 0.02
+  pareto_peak_risk_margin: 0.05
+  pareto_tail_risk_margin: 0.0
+  # 旧版兼容参数；未设置 max_coarse_channels 时作为候选通道上限。
+  pareto_candidate_count: 4
+
+  # 两级搜索走廊宽度 (m): 粗搜索路径两侧各扩展此距离
+  corridor_width: 3.0
+  # Risk/obstacle boundaries may shrink either side independently. The centre
+  # line always retains at least this much room for fine Hybrid A*.
+  corridor_min_width: 1.0
+  corridor_risk_margin: 0.15
+  # The corridor is a topological boundary, not a reference trajectory. Fine
+  # Pareto search may move freely inside it to avoid local high-risk cells.
+  corridor_center_weight: 0.0
+  # Very weak topology memory used only by Pareto fine search.  It breaks ties
+  # between overlapping corridor masks, but is deliberately much smaller than
+  # the terrain objective so the fine path can still leave a risky coarse line.
+  fine_topology_preservation_weight: 0.08
+  # The adaptive safety channel exists only after the ordinary coarse pool has
+  # proved unsafe. Preserve that specific safety hypothesis more strongly in
+  # its fine corridor; otherwise overlapping masks make it converge back to
+  # the shortest high-risk route (nav_8 short_04). Ordinary channels remain at
+  # 0.08, so this does not globally force fine paths onto coarse polylines.
+  adaptive_safe_topology_preservation_weight: 0.30
+  # Fine candidates represent realised terrain choices, so their duplicate
+  # threshold is intentionally tighter than the 2 m coarse-topology threshold.
+  fine_min_hausdorff: 0.75
+  fine_max_overlap: 0.92
+
+  # 共享状态多启发式 Hybrid A*。关闭后完整恢复原单队列欧氏启发式，
+  # 可用于同一地图、同一起终点的严格 A/B 对比。
+  use_multi_heuristic_search: true
+  mha_anchor_weight: 1.0
+  mha_risk_weight: 1.0
+  mha_heading_weight: 1.0
+  mha_heading_gain: 1.0
+  # 辅助队列仅在其队首代价不超过 anchor 的该倍数时参与扩展，
+  # 防止风险/航向启发把搜索无限带离可达的最短路方向。
+  mha_queue_bound: 1.5
+
+  # One shared coarse graph keeps a bounded epsilon-Pareto label archive for
+  # each (x,y,heading) state. MHA* still schedules expansion; these parameters
+  # only decide which length/risk arrivals remain available as route choices.
+  coarse_multi_label_enabled: true
+  coarse_labels_per_state: 4
+  coarse_label_epsilon_length: 0.5
+  coarse_label_epsilon_risk: 0.02
+  # Two lightweight progress gates preserve spatially different passages that
+  # would otherwise be discarded before reaching the goal merely because they
+  # are temporarily longer and riskier.  The signature is not a new cost and
+  # not another full lattice dimension: the per-state archive remains capped
+  # at four labels, with only one slot reserved for an unseen spatial channel.
+  coarse_topology_signature_enabled: true
+  coarse_topology_gate_first_ratio: 0.30
+  coarse_topology_gate_second_ratio: 0.65
+  # Match the independent-corridor scale. Each gate stores only three bounded
+  # classes (left/centre/right); finer bins retain geometric fluctuations as
+  # false topologies and make the fine stage needlessly expensive.
+  coarse_topology_lateral_bin_width: 3.0
+  # Goal labels are clustered by actual path topology. Reaching this raw label
+  # limit alone cannot stop the search; early termination additionally requires
+  # max_coarse_channels independent passages to remain stable for the settling
+  # window. Iteration/time limits still bound scenes with fewer passages.
+  coarse_goal_label_limit: 12
+  coarse_goal_settle_iterations: 8000
+  # Do not spend the entire budget waiting for a fourth passage when the map
+  # has only two or three real topologies. Stop only after both topology and
+  # retained goal-label evidence have remained unchanged for the settle span.
+  coarse_min_stable_channels: 2
+  coarse_min_goal_labels_for_settle: 6
+  # A scene with only one genuine passage must not consume the full wall-time
+  # budget forever.  It may stop only after the retained goal-label pool has
+  # remained unchanged for this longer window and the anchor frontier cannot
+  # improve the best retained goal by more than the configured slack.
+  coarse_single_topology_settle_iterations: 16000
+  coarse_single_topology_anchor_slack: 0.03
+  coarse_multi_label_time_limit: 3.0
+
+  # ===== 自适应差异化粗通道 =====
+  # 多启发式搜索只用于粗层；每条粗路径建立独立走廊，细层在各走廊内
+  # 分别执行单队列 Hybrid A*，细化后剔除支配解，再按长度与地形风险
+  # 两个指标组的最小最大遗憾选择折中路径。
+  # Maximum number of topologically independent representatives retained from
+  # the shared goal-label Pareto pool. Fewer are returned when the map contains
+  # fewer genuinely different passages; the planner no longer forces four.
+  max_coarse_channels: 4
+  # Keep all useful coarse channels for visual/audit evidence, but refine only
+  # the non-dominated shortest, safest and most complementary compromise. Fine
+  # Hybrid A* collision checking dominates runtime, so a fourth redundant
+  # refinement provides little decision value at disproportionate cost.
+  max_fine_channels: 3
+  # 只多生成两个候选再选四条代表通道。相比直接搜四条可纠正“先到先得”，
+  # 又避免将粗搜索扩展成大规模 K 路规划。
+  coarse_pool_extra_candidates: 2
+  max_duplicate_attempts: 2
+  # Additional diversity channels use a route-length-aware soft budget.
+  # Set all three values to 0 to disable the wall-time limit completely.
+  coarse_search_time_budget: 0.5
+  coarse_search_time_per_meter: 0.04
+  coarse_search_time_max: 2.0
+
+  # 粗通道首先表达有价值的拓扑差异，而不是无限追求风险极小值。
+  # 候选长度不得超过最短粗路径的 1.30 倍；被拒绝的异常绕行不会建立走廊，
+  # 后续搜索会继续尝试新的中间风险权重与参考通道。
+  coarse_max_detour_ratio: 0.30
+  # Keep the wider 30% envelope for generating safety alternatives, but admit
+  # only candidates within 20% extra distance to the final utopia-regret knee
+  # decision. Inside the bound, relative detour and the remaining regret in
+  # general, pitch and roll risk are compared as four separate dimensions;
+  # no risk group can be hidden by averaging it with an already-safe group.
+  pareto_decision_detour_ratio: 0.20
+  # Chebyshev scores within this dimensionless margin are practically tied.
+  # Prefer the member with lower worst terrain/pitch/roll regret before using
+  # score and length as secondary tie-breakers. In nav_8 a margin of 0.02
+  # affects only long_03 (score 0.0949 vs 0.1050), selecting the much safer
+  # path for just 1.20m additional distance.
+  pareto_score_near_tie_margin: 0.02
+
+  # 已接纳粗路径周围的软排斥场。它只改变后续候选的累计代价，不把旧路径
+  # 变成障碍，因此不会破坏可达性。
+  coarse_diversity_radius: 3.0
+  coarse_diversity_weight: 2.0
+
+  # Coarse routes may legitimately share their start, goal and long common
+  # sections. They are independent when a continuous middle section remains
+  # at least this far apart, rather than when whole-path overlap is low.
+  coarse_min_hausdorff: 2.0
+  coarse_min_separated_length: 3.0

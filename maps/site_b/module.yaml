@@ -1,0 +1,6 @@
+# Coordinate contract for site_b. Fill the origin before autonomous driving.
+map_module: site_b
+origin_lat: ""
+origin_lon: ""
+origin_alt: 0.0
+yaw_enu_to_oxyz_deg: 0.0

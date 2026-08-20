@@ -1,0 +1,18 @@
+<launch>
+  <arg name="project_root" default="$(find terrain_map_builder)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="map_module_dir"
+       default="$(eval arg('map_module') if len(arg('map_module')) > 0 and arg('map_module')[0].isalnum() and arg('map_module').replace('_','').replace('-','').isalnum() else 'INVALID_MAP_MODULE')"/>
+  <arg name="pcd_file" default="$(arg project_root)/maps/$(arg map_module_dir)/aligned/GlobalMap.pcd"/>
+  <arg name="output_dir" default="$(arg project_root)/maps/$(arg map_module_dir)/planner"/>
+  <arg name="map_name" default="terrain_map"/>
+
+  <node pkg="terrain_map_builder" type="pcd_to_costmap"
+        name="pcd_to_costmap" output="screen">
+    <rosparam file="$(find terrain_map_builder)/config/terrain_processing.yaml"
+              command="load"/>
+    <param name="pcd_file" value="$(arg pcd_file)"/>
+    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="map_name" value="$(arg map_name)"/>
+  </node>
+</launch>

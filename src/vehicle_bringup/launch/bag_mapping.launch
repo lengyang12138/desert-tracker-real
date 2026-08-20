@@ -1,0 +1,49 @@
+<launch>
+  <!--
+    Deterministic offline mapping from a rosbag. This launch never opens a
+    serial port, starts a LiDAR driver, publishes /imu/data, or starts CAN.
+    Play the bag separately with rosbag simulated-clock playback.
+  -->
+  <arg name="use_sim_time" default="true"/>
+  <arg name="bag_point_topic" default="/points_raw"/>
+  <arg name="bag_has_processed_points" default="true"/>
+  <arg name="lio_point_topic"
+       default="$(eval arg('bag_point_topic') if arg('bag_has_processed_points') == 'true' else '/points_raw')"/>
+  <arg name="imu_topic" default="/imu/data"/>
+  <arg name="imu_time_offset_s" default="0.0"/>
+  <!-- Bags made by record_mapping_bag.launch contain /tf_static. Set false
+       only for an older/external bag that omitted sensor transforms. -->
+  <arg name="bag_has_static_tf" default="true"/>
+  <arg name="lidar_xyz" default="0 0 0"/>
+  <arg name="lidar_ypr" default="0 0 0"/>
+  <arg name="imu_xyz" default="0 0 0"/>
+  <arg name="imu_ypr" default="0 0 0"/>
+  <arg name="lio_sam_config" default="$(find lio_sam)/config/params.yaml"/>
+
+  <param name="/use_sim_time" value="$(arg use_sim_time)"/>
+
+  <include file="$(find pointcloud_preprocess)/launch/points_raw.launch">
+    <arg name="start_driver" value="false"/>
+    <arg name="start_converter"
+         value="$(eval arg('bag_has_processed_points') != 'true')"/>
+    <arg name="input_topic" value="$(arg bag_point_topic)"/>
+    <arg name="output_topic" value="/points_raw"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+    <arg name="publish_lidar_tf"
+         value="$(eval arg('bag_has_static_tf') != 'true')"/>
+  </include>
+
+  <!-- Compatibility path for bags not produced by our recorder. Normal bags
+       replay both sensor transforms from their recorded /tf_static topic. -->
+  <node if="$(eval arg('bag_has_static_tf') != 'true')" pkg="tf2_ros"
+        type="static_transform_publisher" name="base_to_imu_tf"
+        args="$(arg imu_xyz) $(arg imu_ypr) base_link imu_link"/>
+
+  <include file="$(find vehicle_bringup)/launch/lio_sam_mapping.launch">
+    <arg name="config_file" value="$(arg lio_sam_config)"/>
+    <arg name="point_cloud_topic" value="$(arg lio_point_topic)"/>
+    <arg name="imu_topic" value="$(arg imu_topic)"/>
+    <arg name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+  </include>
+</launch>

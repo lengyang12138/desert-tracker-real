@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>pointcloud_preprocess</name>
+  <version>0.1.0</version>
+  <description>Real/simulation PointCloud2 adapter for the LIO-SAM topic contract.</description>
+  <maintainer email="maintainer@example.com">desert-tracker maintainers</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>roscpp</depend>
+  <depend>sensor_msgs</depend>
+  <exec_depend>rslidar_sdk</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+</package>

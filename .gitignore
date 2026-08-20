@@ -1,0 +1,29 @@
+/build/
+/devel/
+/install/
+*.pyc
+__pycache__/
+.idea/
+.vscode/
+logs/
+/bags/**/*.bag
+/bags/**/*.bag.active
+/bags/**/*.bag.orig
+
+# Keep the runtime output layout in the project, but never version generated
+# maps, trajectories or evaluation artifacts. Each maps/<name> directory is
+# one independent map module; preserve its topology and module.yaml only.
+/maps/*/raw/**
+!/maps/*/raw/.gitkeep
+/maps/*/aligned/**
+!/maps/*/aligned/.gitkeep
+/maps/*/planner/**
+!/maps/*/planner/.gitkeep
+# The small sample planner map is an intentional versioned test fixture.
+!/maps/sample_desert/planner/**
+
+/results/**
+!/results/
+!/results/*/
+!/results/*/*/
+!/results/*/*/.gitkeep

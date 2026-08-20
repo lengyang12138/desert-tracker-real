@@ -1,0 +1,6 @@
+# Simulation-only software check module. Never use for real driving.
+map_module: sample_desert
+origin_lat: ""
+origin_lon: ""
+origin_alt: 0.0
+yaw_enu_to_oxyz_deg: 0.0

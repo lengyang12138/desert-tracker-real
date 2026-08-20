@@ -1,0 +1,62 @@
+<launch>
+  <!--
+    Record a mapping/calibration dataset. The RSHELIOS driver publishes
+    /rslidar_points; pointcloud_preprocess must run so the bag contains the
+    LIO-SAM contract /points_raw (x/y/z/intensity/ring/time).
+  -->
+  <arg name="project_root" default="$(find vehicle_bringup)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="map_module_dir"
+       default="$(eval arg('map_module') if len(arg('map_module')) > 0 and arg('map_module')[0].isalnum() and arg('map_module').replace('_','').replace('-','').isalnum() else 'INVALID_MAP_MODULE')"/>
+  <arg name="map_config_file" default="$(arg project_root)/maps/$(arg map_module_dir)/module.yaml"/>
+  <arg name="output_prefix" default="$(arg project_root)/bags/$(arg map_module_dir)/mapping_run"/>
+  <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <arg name="origin_lat" default=""/>
+  <arg name="origin_lon" default=""/>
+  <arg name="origin_alt" default="0"/>
+  <arg name="yaw_enu_to_oxyz_deg" default="0"/>
+  <arg name="lidar_xyz" default="0 0 0"/>
+  <arg name="lidar_ypr" default="0 0 0"/>
+  <arg name="imu_xyz" default="0 0 0"/>
+  <arg name="imu_ypr" default="0 0 0"/>
+  <arg name="warmup_seconds" default="3.0"/>
+  <arg name="topic_timeout_seconds" default="5.0"/>
+
+  <include file="$(find vehicle_interface)/launch/io.launch">
+    <arg name="use_map_config" value="true"/>
+    <arg name="map_config_file" value="$(arg map_config_file)"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="origin_lat" value="$(arg origin_lat)"/>
+    <arg name="origin_lon" value="$(arg origin_lon)"/>
+    <arg name="origin_alt" value="$(arg origin_alt)"/>
+    <arg name="yaw_enu_to_oxyz_deg" value="$(arg yaw_enu_to_oxyz_deg)"/>
+    <arg name="start_can" value="false"/>
+    <arg name="bridge_publish_odom" value="false"/>
+    <arg name="bridge_publish_tf" value="false"/>
+    <arg name="bridge_publish_map_to_odom" value="false"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+  </include>
+
+  <include file="$(find pointcloud_preprocess)/launch/points_raw.launch">
+    <arg name="start_driver" value="true"/>
+    <arg name="start_converter" value="true"/>
+    <arg name="input_topic" value="/rslidar_points"/>
+    <arg name="output_topic" value="/points_raw"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+  </include>
+
+  <!-- This gate waits for hardware initialization and requires fresh messages
+       from both mapping sensors before replacing itself with rosbag record. -->
+  <node pkg="vehicle_bringup" type="mapping_bag_recorder"
+        name="mapping_bag_recorder" output="screen" required="true">
+    <param name="warmup_seconds" value="$(arg warmup_seconds)"/>
+    <param name="topic_timeout_seconds" value="$(arg topic_timeout_seconds)"/>
+    <param name="output_prefix" value="$(arg output_prefix)"/>
+    <param name="points_topic" value="/points_raw"/>
+    <param name="imu_topic" value="/imu/data"/>
+  </node>
+</launch>

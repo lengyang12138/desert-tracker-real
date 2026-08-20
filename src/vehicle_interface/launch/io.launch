@@ -1,0 +1,111 @@
+<launch>
+  <arg name="start_sensors" default="true"/>
+  <arg name="start_can" default="true"/>
+  <!-- When enabled, module.yaml overrides the four Qianxun map-frame args. -->
+  <arg name="use_map_config" default="false"/>
+  <arg name="map_config_file" default=""/>
+  <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="gnss_baud" default="115200"/>
+  <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <arg name="imu_baud" default="460800"/>
+  <arg name="imu_data_topic" default="/imu/data"/>
+  <!-- IMU pose in base_link. The order is xyz then yaw-pitch-roll (radians). -->
+  <arg name="publish_imu_tf" default="true"/>
+  <arg name="imu_xyz" default="0 0 0"/>
+  <arg name="imu_ypr" default="0 0 0"/>
+  <arg name="imu_alignment_max_error_s" default="0.06"/>
+  <arg name="gnss_clock_max_residual_s" default="0.30"/>
+  <!-- Defaults retained from the vehicle-validated plan_try configuration. -->
+  <arg name="imu_heading_mode" default="AHRS"/>
+  <arg name="imu_yaw_sign" default="1"/>
+  <arg name="imu_true_north_offset_deg" default="181.6"/>
+  <arg name="imu_mount_yaw_deg" default="0"/>
+  <arg name="imu_roll_sign" default="1"/>
+  <arg name="imu_pitch_sign" default="-1"/>
+  <arg name="imu_gyro_z_sign" default="1"/>
+  <arg name="imu_roll_zero_deg" default="3.6"/>
+  <arg name="imu_pitch_zero_deg" default="3.8"/>
+  <arg name="imu_gyro_z_bias_dps" default="0"/>
+  <arg name="lever_x" default="-0.08"/>
+  <arg name="lever_y" default="0"/>
+  <arg name="lever_z" default="-0.99"/>
+  <arg name="origin_lat" default=""/>
+  <arg name="origin_lon" default=""/>
+  <arg name="origin_alt" default="0"/>
+  <arg name="yaw_enu_to_oxyz_deg" default="0"/>
+  <arg name="can_iface" default="can0"/>
+  <arg name="speed_sign" default="-1"/>
+  <arg name="steer_sign" default="1"/>
+  <arg name="feedback_sign" default="-1"/>
+  <!-- Raw feedback rpm divided by this value becomes sprocket rpm. -->
+  <arg name="feedback_gear_ratio" default="1.0"/>
+  <arg name="bridge_publish_odom" default="true"/>
+  <arg name="bridge_publish_vehicle_state" default="true"/>
+  <arg name="bridge_publish_tf" default="true"/>
+  <arg name="bridge_publish_map_to_odom" default="true"/>
+
+  <group if="$(arg start_sensors)">
+    <node pkg="vehicle_interface" type="yis525_node.py"
+          name="yis525" output="screen">
+      <env name="YIS_PORT" value="$(arg imu_port)"/>
+      <env name="YIS_BAUD" value="$(arg imu_baud)"/>
+      <env name="YIS_ROS_TOPIC" value="$(arg imu_data_topic)"/>
+      <env name="YIS_FRAME_ID" value="imu_link"/>
+    </node>
+
+    <node pkg="vehicle_interface" type="qianxun_imu_fusion_node.py"
+          name="qianxun_imu_fusion" output="screen">
+      <rosparam if="$(arg use_map_config)" file="$(arg map_config_file)"
+                command="load"/>
+      <env name="QX_PORT" value="$(arg gnss_port)"/>
+      <env name="QX_BAUD" value="$(arg gnss_baud)"/>
+      <env name="YIS_ROS_TOPIC" value="$(arg imu_data_topic)"/>
+      <env name="QX_IMU_ALIGNMENT_MAX_ERROR_S"
+           value="$(arg imu_alignment_max_error_s)"/>
+      <env name="QX_GNSS_CLOCK_MAX_RESIDUAL_S"
+           value="$(arg gnss_clock_max_residual_s)"/>
+      <env name="QX_REQUIRE_GNSS_CLOCK_CONSISTENCY" value="1"/>
+      <env name="QX_ORIGIN_LAT" value="$(arg origin_lat)"/>
+      <env name="QX_ORIGIN_LON" value="$(arg origin_lon)"/>
+      <env name="QX_ORIGIN_ALT" value="$(arg origin_alt)"/>
+      <env name="QX_YAW_ENU_TO_OXYZ_DEG" value="$(arg yaw_enu_to_oxyz_deg)"/>
+      <env name="QX_GUIDE_START_ENABLE" value="0"/>
+      <env name="QX_CONTROL_START_ALIGN_ENABLE" value="0"/>
+      <env name="IMU_HEADING_MODE" value="$(arg imu_heading_mode)"/>
+      <env name="IMU_YAW_SIGN" value="$(arg imu_yaw_sign)"/>
+      <env name="IMU_YAW_TRUE_NORTH_OFFSET_DEG" value="$(arg imu_true_north_offset_deg)"/>
+      <env name="IMU_MOUNT_YAW_DEG" value="$(arg imu_mount_yaw_deg)"/>
+      <env name="IMU_ROLL_SIGN" value="$(arg imu_roll_sign)"/>
+      <env name="IMU_PITCH_SIGN" value="$(arg imu_pitch_sign)"/>
+      <env name="IMU_GYRO_Z_SIGN" value="$(arg imu_gyro_z_sign)"/>
+      <env name="IMU_ROLL_ZERO_DEG" value="$(arg imu_roll_zero_deg)"/>
+      <env name="IMU_PITCH_ZERO_DEG" value="$(arg imu_pitch_zero_deg)"/>
+      <env name="IMU_GYRO_Z_BIAS_DPS" value="$(arg imu_gyro_z_bias_dps)"/>
+      <env name="QX_LEVER_X" value="$(arg lever_x)"/>
+      <env name="QX_LEVER_Y" value="$(arg lever_y)"/>
+      <env name="QX_LEVER_Z" value="$(arg lever_z)"/>
+    </node>
+  </group>
+
+  <!-- Keep imu_link connected even when /imu/data comes from replay or an
+       alternate driver. Replace imu_xyz after measuring the installed IMU. -->
+  <node if="$(arg publish_imu_tf)" pkg="tf2_ros"
+        type="static_transform_publisher" name="base_to_imu_tf"
+        args="$(arg imu_xyz) $(arg imu_ypr) base_link imu_link"/>
+
+  <node pkg="vehicle_interface" type="real_interface_bridge_node.py"
+        name="real_interface_bridge" output="screen">
+    <rosparam file="$(find vehicle_interface)/config/bridge.yaml"
+              command="load"/>
+    <param name="publish_odom" value="$(arg bridge_publish_odom)"/>
+    <param name="publish_vehicle_state"
+           value="$(arg bridge_publish_vehicle_state)"/>
+    <param name="publish_tf" value="$(arg bridge_publish_tf)"/>
+    <param name="publish_map_to_odom_identity"
+           value="$(arg bridge_publish_map_to_odom)"/>
+  </node>
+
+  <node if="$(arg start_can)" pkg="vehicle_interface"
+        type="zmq_can_bridge_node.py" name="zmq_can_bridge" output="screen"
+        args="--can $(arg can_iface) --speed-sign $(arg speed_sign) --steer-sign $(arg steer_sign) --feedback-sign $(arg feedback_sign) --gear-ratio $(arg feedback_gear_ratio)"/>
+</launch>

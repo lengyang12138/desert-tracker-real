@@ -1,0 +1,57 @@
+<launch>
+  <arg name="project_root" default="$(find vehicle_bringup)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="map_module_dir"
+       default="$(eval arg('map_module') if len(arg('map_module')) > 0 and arg('map_module')[0].isalnum() and arg('map_module').replace('_','').replace('-','').isalnum() else 'INVALID_MAP_MODULE')"/>
+  <arg name="map_dir" default="$(arg project_root)/maps/$(arg map_module_dir)/planner"/>
+  <arg name="map_file" default="$(arg map_dir)/traversability_map.yaml"/>
+  <arg name="validation_stage" default="planner"/>
+  <arg name="global_planner" default="my_global_planner/HybridAStarPlanner"/>
+  <arg name="max_speed" default="0.15"/>
+  <arg name="max_yaw_rate" default="0.35"/>
+  <arg name="require_localization_quality" default="false"/>
+
+  <!-- Persistent guard: any incomplete/unsafe module shuts the launch down. -->
+  <node pkg="terrain_map_builder" type="map_module.py"
+        name="map_module_guard" output="screen" required="true"
+        args="--project-root &quot;$(arg project_root)&quot; guard $(arg map_module_dir) --stage $(arg validation_stage) --map-dir &quot;$(arg map_dir)&quot;"/>
+
+  <node pkg="map_server" type="map_server" name="map_server"
+        args="$(arg map_file)" output="screen"/>
+
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <rosparam file="$(find vehicle_bringup)/config/costmap_common.yaml"
+              command="load" ns="global_costmap"/>
+    <rosparam file="$(find vehicle_bringup)/config/costmap_common.yaml"
+              command="load" ns="local_costmap"/>
+    <rosparam file="$(find vehicle_bringup)/config/global_costmap.yaml"
+              command="load"/>
+    <rosparam file="$(find vehicle_bringup)/config/local_costmap.yaml"
+              command="load"/>
+    <rosparam file="$(find navigation)/config/my_Global_path_planning_params.yaml"
+              command="load"/>
+    <rosparam file="$(find navigation)/config/mpc_local_planner_params.yaml"
+              command="load"/>
+
+    <param name="HybridAStarPlanner/terrain_cost_file"
+           value="$(arg map_dir)/terrain_cost.bin"/>
+    <param name="HybridAStarPlanner/terrain_cost_coarse_file"
+           value="$(arg map_dir)/terrain_cost_coarse.bin"/>
+    <param name="MpcLocalPlanner/terrain_cost_file"
+           value="$(arg map_dir)/terrain_cost.bin"/>
+    <param name="MpcLocalPlanner/odom_topic"
+           value="/vehicle/state"/>
+    <param name="MpcLocalPlanner/max_vel_x" value="$(arg max_speed)"/>
+    <param name="MpcLocalPlanner/max_vel_theta" value="$(arg max_yaw_rate)"/>
+    <param name="MpcLocalPlanner/require_localization_quality"
+           value="$(arg require_localization_quality)"/>
+
+    <param name="base_global_planner" value="$(arg global_planner)"/>
+    <param name="base_local_planner" value="mpc_local_planner/MpcLocalPlanner"/>
+    <param name="controller_frequency" value="10.0"/>
+    <param name="planner_frequency" value="0.0"/>
+    <param name="recovery_behavior_enabled" value="false"/>
+    <param name="clearing_rotation_allowed" value="false"/>
+    <param name="shutdown_costmaps" value="false"/>
+  </node>
+</launch>

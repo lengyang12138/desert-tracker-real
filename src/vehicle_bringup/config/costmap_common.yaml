@@ -1,0 +1,7 @@
+footprint: [[-0.85, -0.64], [-0.85, 0.64], [0.85, 0.64], [0.85, -0.64]]
+footprint_padding: 0.0
+resolution: 0.2
+transform_tolerance: 0.3
+inflation_layer:
+  inflation_radius: 0.05
+  cost_scaling_factor: 10.0

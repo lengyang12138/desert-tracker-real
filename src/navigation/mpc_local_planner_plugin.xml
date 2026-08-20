@@ -1,0 +1,7 @@
+<library path="lib/libmpc_local_planner">
+  <class name="mpc_local_planner/MpcLocalPlanner"
+         type="mpc_local_planner::MpcLocalPlanner"
+         base_class_type="nav_core::BaseLocalPlanner">
+    <description>MPC local planner with first-order dynamics prediction for skid-steer vehicles</description>
+  </class>
+</library>

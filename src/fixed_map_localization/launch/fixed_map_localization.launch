@@ -1,0 +1,44 @@
+<launch>
+  <arg name="map_file"/>
+  <arg name="scan_topic" default="/lio_sam/deskew/cloud_deskewed"/>
+  <arg name="motion_odom_topic" default="/odometry/imu_incremental"/>
+  <arg name="node_output" default="screen"/>
+
+  <!-- Owns map->odom; LIO-SAM retains odom->base_link. -->
+  <node pkg="fixed_map_localization" type="fixed_map_localizer"
+        name="fixed_map_localizer" output="$(arg node_output)" required="true">
+    <param name="map_file" value="$(arg map_file)"/>
+    <param name="scan_topic" value="$(arg scan_topic)"/>
+    <param name="motion_odom_topic" value="$(arg motion_odom_topic)"/>
+    <param name="map_frame" value="map"/>
+    <param name="odom_frame" value="odom"/>
+    <param name="base_frame" value="base_link"/>
+    <param name="map_leaf_size" value="0.35"/>
+    <param name="scan_leaf_size" value="0.25"/>
+    <param name="local_map_radius" value="22.0"/>
+    <param name="ndt_resolution" value="0.8"/>
+    <param name="ndt_step_size" value="0.15"/>
+    <param name="transformation_epsilon" value="0.01"/>
+    <param name="maximum_iterations" value="35"/>
+    <param name="max_fitness_score" value="0.8"/>
+    <param name="max_innovation_xy" value="1.5"/>
+    <param name="max_innovation_yaw_deg" value="8.0"/>
+    <param name="required_consecutive_matches" value="2"/>
+    <param name="quality_topic" value="/localization/quality_ok"/>
+    <param name="quality_timeout" value="1.0"/>
+    <param name="correction_gain" value="0.20"/>
+    <param name="max_correction_step" value="0.04"/>
+    <param name="max_yaw_step_deg" value="0.5"/>
+    <param name="tf_publish_rate" value="30.0"/>
+    <param name="motion_velocity_alpha" value="0.15"/>
+    <param name="forward_velocity_scale" value="0.94"/>
+    <param name="lateral_velocity_scale" value="0.0"/>
+    <param name="max_motion_dt" value="0.05"/>
+    <param name="max_forward_speed" value="0.65"/>
+    <param name="max_lateral_speed" value="0.25"/>
+    <param name="max_yaw_rate" value="0.60"/>
+    <param name="correction_update_deadband_xy" value="0.025"/>
+    <param name="correction_update_deadband_yaw_deg" value="0.15"/>
+    <param name="process_every_n_scans" value="5"/>
+  </node>
+</launch>

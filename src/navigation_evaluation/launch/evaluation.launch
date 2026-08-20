@@ -1,0 +1,42 @@
+<launch>
+  <arg name="project_root" default="$(find navigation_evaluation)/../.."/>
+  <arg name="localization_mode" default="qianxun"/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="map_module_dir"
+       default="$(eval arg('map_module') if len(arg('map_module')) > 0 and arg('map_module')[0].isalnum() and arg('map_module').replace('_','').replace('-','').isalnum() else 'INVALID_MAP_MODULE')"/>
+  <arg name="map_dir" default="$(arg project_root)/maps/$(arg map_module_dir)/planner"/>
+  <arg name="output_dir"
+       default="$(arg project_root)/results/$(arg map_module_dir)/$(arg localization_mode)"/>
+  <arg name="reference_state_topic" default="/bus/location"/>
+  <arg name="vehicle_sensor_topic" default="/bus/sensor"/>
+  <arg name="imu_topic" default="/imu/data"/>
+  <arg name="motor_feedback_topic" default="/motor_feedback"/>
+  <arg name="joint_states_topic" default="/joint_states"/>
+  <arg name="mapping_odom_topic"
+       default="$(eval '/fixed_map_localizer/odometry' if localization_mode == 'lio_sam' else '/odometry/imu_incremental')"/>
+  <arg name="control_odom_topic" default="/odometry/imu_incremental"/>
+
+  <node pkg="navigation_evaluation" type="real_nav_evaluator.py"
+        name="real_nav_evaluator" output="screen">
+    <param name="localization_mode" value="$(arg localization_mode)"/>
+    <param name="map_module" value="$(arg map_module_dir)"/>
+    <param name="map_dir" value="$(arg map_dir)"/>
+    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="dem_file" value="$(arg map_dir)/elevation_map.dem"/>
+    <param name="pgm_file" value="$(arg map_dir)/traversability_map.pgm"/>
+    <param name="yaml_file" value="$(arg map_dir)/traversability_map.yaml"/>
+    <param name="obstacle_file" value="$(arg map_dir)/obstacle_map.pgm"/>
+    <param name="terrain_cost_file" value="$(arg map_dir)/terrain_cost.bin"/>
+    <param name="terrain_cost_coarse_file" value="$(arg map_dir)/terrain_cost_coarse.bin"/>
+    <param name="mapping_odom_topic" value="$(arg mapping_odom_topic)"/>
+    <param name="control_odom_topic" value="$(arg control_odom_topic)"/>
+    <param name="reference_state_topic" value="$(arg reference_state_topic)"/>
+    <param name="vehicle_sensor_topic" value="$(arg vehicle_sensor_topic)"/>
+    <param name="imu_topic" value="$(arg imu_topic)"/>
+    <param name="motor_feedback_topic" value="$(arg motor_feedback_topic)"/>
+    <param name="joint_states_topic" value="$(arg joint_states_topic)"/>
+    <param name="applied_cmd_topic" value="/cmd_vel"/>
+    <param name="mpc_cmd_topic" value="/cmd_vel"/>
+    <param name="align_gt_to_control_frame" value="false"/>
+  </node>
+</launch>

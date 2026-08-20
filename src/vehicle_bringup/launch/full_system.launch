@@ -1,0 +1,118 @@
+<launch>
+  <arg name="project_root" default="$(find vehicle_bringup)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="map_module_dir"
+       default="$(eval arg('map_module') if len(arg('map_module')) > 0 and arg('map_module')[0].isalnum() and arg('map_module').replace('_','').replace('-','').isalnum() else 'INVALID_MAP_MODULE')"/>
+  <arg name="map_config_file" default="$(arg project_root)/maps/$(arg map_module_dir)/module.yaml"/>
+  <arg name="map_dir" default="$(arg project_root)/maps/$(arg map_module_dir)/planner"/>
+  <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <!-- One physical YIS525 and one ROS publisher, shared by both estimators. -->
+  <arg name="imu_data_topic" default="/imu/data"/>
+  <arg name="imu_xyz" default="0 0 0"/>
+  <arg name="imu_ypr" default="0 0 0"/>
+  <arg name="imu_time_offset_s" default="0.0"/>
+  <arg name="imu_alignment_max_error_s" default="0.06"/>
+  <arg name="gnss_clock_max_residual_s" default="0.30"/>
+  <!-- Vehicle defaults; remeasure only after the IMU installation changes. -->
+  <arg name="imu_heading_mode" default="AHRS"/>
+  <arg name="imu_yaw_sign" default="1"/>
+  <arg name="imu_true_north_offset_deg" default="181.6"/>
+  <arg name="imu_mount_yaw_deg" default="0"/>
+  <arg name="imu_roll_sign" default="1"/>
+  <arg name="imu_pitch_sign" default="-1"/>
+  <arg name="imu_gyro_z_sign" default="1"/>
+  <arg name="imu_roll_zero_deg" default="3.6"/>
+  <arg name="imu_pitch_zero_deg" default="3.8"/>
+  <arg name="imu_gyro_z_bias_dps" default="0"/>
+  <arg name="lever_x" default="-0.08"/>
+  <arg name="lever_y" default="0"/>
+  <arg name="lever_z" default="-0.99"/>
+  <arg name="origin_lat" default=""/>
+  <arg name="origin_lon" default=""/>
+  <arg name="origin_alt" default="0"/>
+  <arg name="yaw_enu_to_oxyz_deg" default="0"/>
+  <arg name="can_iface" default="can0"/>
+  <arg name="motor_feedback_gear_ratio" default="1.0"/>
+  <arg name="max_speed" default="0.15"/>
+  <arg name="localization_mode" default="qianxun"/>
+  <arg name="start_evaluator" default="true"/>
+  <arg name="evaluation_output_dir"
+       default="$(arg project_root)/results/$(arg map_module_dir)/$(arg localization_mode)"/>
+
+  <!-- Required only when localization_mode:=lio_sam. -->
+  <arg name="lio_sam_config" default="$(find lio_sam)/config/params.yaml"/>
+  <arg name="fixed_map_pcd" default="$(arg project_root)/maps/$(arg map_module_dir)/aligned/GlobalMap.pcd"/>
+  <arg name="lidar_xyz" default="0 0 0"/>
+  <arg name="lidar_ypr" default="0 0 0"/>
+  <include file="$(find vehicle_interface)/launch/io.launch">
+    <arg name="use_map_config" value="true"/>
+    <arg name="map_config_file" value="$(arg map_config_file)"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_data_topic" value="$(arg imu_data_topic)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="imu_alignment_max_error_s"
+         value="$(arg imu_alignment_max_error_s)"/>
+    <arg name="gnss_clock_max_residual_s"
+         value="$(arg gnss_clock_max_residual_s)"/>
+    <arg name="imu_heading_mode" value="$(arg imu_heading_mode)"/>
+    <arg name="imu_yaw_sign" value="$(arg imu_yaw_sign)"/>
+    <arg name="imu_true_north_offset_deg" value="$(arg imu_true_north_offset_deg)"/>
+    <arg name="imu_mount_yaw_deg" value="$(arg imu_mount_yaw_deg)"/>
+    <arg name="imu_roll_sign" value="$(arg imu_roll_sign)"/>
+    <arg name="imu_pitch_sign" value="$(arg imu_pitch_sign)"/>
+    <arg name="imu_gyro_z_sign" value="$(arg imu_gyro_z_sign)"/>
+    <arg name="imu_roll_zero_deg" value="$(arg imu_roll_zero_deg)"/>
+    <arg name="imu_pitch_zero_deg" value="$(arg imu_pitch_zero_deg)"/>
+    <arg name="imu_gyro_z_bias_dps" value="$(arg imu_gyro_z_bias_dps)"/>
+    <arg name="lever_x" value="$(arg lever_x)"/>
+    <arg name="lever_y" value="$(arg lever_y)"/>
+    <arg name="lever_z" value="$(arg lever_z)"/>
+    <arg name="origin_lat" value="$(arg origin_lat)"/>
+    <arg name="origin_lon" value="$(arg origin_lon)"/>
+    <arg name="origin_alt" value="$(arg origin_alt)"/>
+    <arg name="yaw_enu_to_oxyz_deg" value="$(arg yaw_enu_to_oxyz_deg)"/>
+    <arg name="can_iface" value="$(arg can_iface)"/>
+    <arg name="feedback_gear_ratio" value="$(arg motor_feedback_gear_ratio)"/>
+    <!-- Exactly one localization source may own odometry and TF. -->
+    <arg name="bridge_publish_odom"
+         value="$(eval localization_mode == 'qianxun')"/>
+    <arg name="bridge_publish_vehicle_state"
+         value="$(eval localization_mode == 'qianxun')"/>
+    <arg name="bridge_publish_tf"
+         value="$(eval localization_mode == 'qianxun')"/>
+    <arg name="bridge_publish_map_to_odom"
+         value="$(eval localization_mode == 'qianxun')"/>
+  </include>
+
+  <include if="$(eval localization_mode == 'lio_sam')"
+           file="$(find vehicle_bringup)/launch/lio_sam_localization.launch">
+    <arg name="lio_sam_config" value="$(arg lio_sam_config)"/>
+    <arg name="imu_topic" value="$(arg imu_data_topic)"/>
+    <arg name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+    <arg name="fixed_map_pcd" value="$(arg fixed_map_pcd)"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+  </include>
+
+  <include file="$(find vehicle_bringup)/launch/navigation.launch">
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module_dir)"/>
+    <arg name="map_dir" value="$(arg map_dir)"/>
+    <arg name="validation_stage" value="$(arg localization_mode)"/>
+    <arg name="max_speed" value="$(arg max_speed)"/>
+    <arg name="require_localization_quality"
+         value="$(eval localization_mode == 'lio_sam')"/>
+  </include>
+
+  <include if="$(arg start_evaluator)"
+           file="$(find navigation_evaluation)/launch/evaluation.launch">
+    <arg name="localization_mode" value="$(arg localization_mode)"/>
+    <arg name="map_module" value="$(arg map_module_dir)"/>
+    <arg name="map_dir" value="$(arg map_dir)"/>
+    <arg name="output_dir" value="$(arg evaluation_output_dir)"/>
+    <arg name="imu_topic" value="$(arg imu_data_topic)"/>
+  </include>
+</launch>

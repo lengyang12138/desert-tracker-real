@@ -1,0 +1,15 @@
+<library path="lib/libmy_global_path_planning">
+  <class name="my_global_planner/HybridAStarPlanner"
+         type="my_global_planner::HybridAStarPlanner"
+         base_class_type="nav_core::BaseGlobalPlanner">
+    <description>Terrain-aware Hybrid A* global path planner</description>
+  </class>
+  <class name="my_global_planner/BasicHybridAStarPlanner"
+         type="my_global_planner::BasicHybridAStarPlanner"
+         base_class_type="nav_core::BaseGlobalPlanner">
+    <description>
+      Baseline Hybrid A*: identical kinematics and collision handling with
+      terrain-risk scoring and Pareto selection disabled
+    </description>
+  </class>
+</library>

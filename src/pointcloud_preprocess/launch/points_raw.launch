@@ -1,0 +1,26 @@
+<launch>
+  <!-- RSHELIOS XYZIRT: preserve native ring/timestamp as LIO-SAM ring/time. -->
+  <arg name="node_output" default="screen"/>
+  <arg name="start_driver" default="true"/>
+  <arg name="start_converter" default="true"/>
+  <arg name="input_topic" default="/rslidar_points"/>
+  <arg name="output_topic" default="/points_raw"/>
+  <arg name="output_frame" default="velodyne"/>
+  <arg name="lidar_xyz" default="0 0 0"/>
+  <arg name="lidar_ypr" default="0 0 0"/>
+  <arg name="publish_lidar_tf" default="true"/>
+  <node if="$(arg start_driver)" pkg="rslidar_sdk" type="rslidar_sdk_node" name="rslidar_sdk_node"
+        output="$(arg node_output)">
+    <param name="config_path" value="$(find pointcloud_preprocess)/config/rslidar.yaml"/>
+  </node>
+  <node if="$(arg start_converter)" pkg="pointcloud_preprocess" type="rs_to_lio_sam"
+        name="rs_to_lio_sam" output="$(arg node_output)">
+    <param name="input" value="$(arg input_topic)"/>
+    <param name="output" value="$(arg output_topic)"/>
+    <param name="output_frame" value="$(arg output_frame)"/>
+  </node>
+  <!-- xyz and yaw-pitch-roll; replace the two defaults once after measurement. -->
+  <node if="$(arg publish_lidar_tf)" pkg="tf2_ros"
+        type="static_transform_publisher" name="base_to_velodyne_tf"
+        args="$(arg lidar_xyz) $(arg lidar_ypr) base_link velodyne"/>
+</launch>

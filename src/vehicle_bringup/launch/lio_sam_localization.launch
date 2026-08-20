@@ -1,0 +1,41 @@
+<launch>
+  <!--
+    Runtime LiDAR localization against the PCD used to derive the planner map.
+    LIO-SAM supplies odom->base_link and incremental odometry; the fixed-map
+    NDT localizer supplies map->odom. No PointCloud2 obstacle layer is loaded.
+  -->
+  <arg name="lio_sam_config"/>
+  <arg name="fixed_map_pcd"/>
+  <!-- Subscriber only: IMU driver/ROS publisher is owned by real_io. -->
+  <arg name="imu_topic" default="/imu/data"/>
+  <arg name="imu_time_offset_s" default="0.0"/>
+  <arg name="lidar_xyz" default="0 0 0"/>
+  <arg name="lidar_ypr" default="0 0 0"/>
+
+  <include file="$(find pointcloud_preprocess)/launch/points_raw.launch">
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+  </include>
+
+  <include file="$(find vehicle_bringup)/launch/lio_sam_mapping.launch">
+    <arg name="config_file" value="$(arg lio_sam_config)"/>
+    <arg name="imu_topic" value="$(arg imu_topic)"/>
+    <arg name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+    <arg name="publish_map_to_odom_tf" value="false"/>
+  </include>
+
+  <!-- Normalize LIO world-frame velocity and the shared IMU yaw rate to the
+       same measurement-time/base_link contract used in Qianxun mode. -->
+  <node pkg="vehicle_interface" type="lio_vehicle_state_node.py"
+        name="lio_vehicle_state" output="screen">
+    <param name="odom_topic" value="/odometry/imu_incremental"/>
+    <param name="imu_topic" value="$(arg imu_topic)"/>
+    <param name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+    <param name="output_topic" value="/vehicle/state"/>
+    <param name="base_frame" value="base_link"/>
+  </node>
+
+  <include file="$(find fixed_map_localization)/launch/fixed_map_localization.launch">
+    <arg name="map_file" value="$(arg fixed_map_pcd)"/>
+  </include>
+</launch>

@@ -1,0 +1,196 @@
+# ============================================================
+#  MPC 局部规划器参数
+#  针对沙漠履带车动力学设计，解决 TEB 因运动学/动力学模型失配
+#  导致的直线振荡问题
+# ============================================================
+#
+#  与 TEB 的核心区别:
+#    TEB 假设车辆瞬时响应指令 (运动学模型)
+#    MPC 在预测模型中纳入一阶滞后 + 角速度死区 (动力学模型)
+#    → 每次航向修正自动补偿 tau 和死区, 消除过冲振荡
+#
+#  车辆动力学 (move.xacro):
+#    wheel_speed_tau = 0.12s, turning_torque_scale = 0.3
+#    slip2 = 0.12, angular_deadband = 0.05 rad/s
+# ============================================================
+
+MpcLocalPlanner:
+  # IMU 预积分里程计包含有效 twist；/lio_sam/mapping/odometry 只有 pose，
+  # 会导致 MPC 每个控制周期都错误地从 v=0、omega=0 开始预测。
+  # 统一控制状态：header.stamp为真实速度/角速度测量时刻，twist在base_link。
+  odom_topic: /vehicle/state
+
+  # ===== 车辆动力学模型 =====
+  # tau_v: 线速度一阶滞后 (来自 wheel_speed_tau)
+  tau_v: 0.12
+  # tau_omega: 角速度一阶滞后 (tau_v / turning_torque_scale 的近似)
+  tau_omega: 0.20
+  # 纵向有效速度系数 lambda_v = v_actual / v_cmd。仿真中用低带宽
+  # 在线辨识跟随接触状态变化，避免把单帧碰撞当成持续滑移。
+  linear_tracking_gain: 1.0
+  enable_linear_gain_adaptation: true
+  linear_gain_min: 0.40
+  linear_gain_max: 1.20
+  linear_gain_filter_alpha: 0.05
+  linear_gain_min_command: 0.08
+  linear_gain_stable_delta: 0.02
+  linear_gain_stable_cycles: 3
+  # 平地起步实测 omega_actual/omega_cmd=0.65~0.73，以0.60作为名义值；
+  # 长侧坡上响应会降至约0.25~0.35，由在线辨识在导航过程中自动修正。
+  omega_tracking_gain: 0.60
+  enable_omega_gain_adaptation: true
+  omega_gain_min: 0.20
+  omega_gain_max: 0.90
+  omega_gain_filter_alpha: 0.10
+  # 坡面瞬态角速度不能立即视为转向能力恢复：下降快跟随，回升慢确认。
+  omega_gain_rise_alpha: 0.02
+  # 原来的0.10阈值使坡面上的小转向指令全部显示gain_obs=nan。
+  omega_gain_min_command: 0.02
+  # 指令连续稳定3个控制周期后才更新，避免把换向瞬态当作稳态增益。
+  omega_gain_stable_delta: 0.015
+  omega_gain_stable_cycles: 3
+  # 一阶响应时间常数辨识。只在指令稳定且测量向目标收敛时更新，
+  # 并用紧边界和小步长防止噪声使模型突变。
+  enable_time_constant_adaptation: true
+  tau_v_min: 0.05
+  tau_v_max: 0.50
+  tau_omega_min: 0.08
+  tau_omega_max: 0.80
+  tau_filter_alpha: 0.02
+  tau_min_response_delta: 0.03
+  # 从历史/cmd_vel中选择 measurement_stamp-delay 时刻已经生效的指令。
+  # 若底盘实测存在固定纯延迟，只调整此参数，不修改传感器时间戳。
+  command_alignment_delay: 0.0
+  command_alignment_max_age: 0.30
+  # 车辆近零角速度阈值，仅描述驱动特性；MPC预测中不截断可达的小角速度
+  angular_deadband: 0.05
+
+  # ===== 实车输入与实时性 watchdog =====
+  # /vehicle/state 使用真实测量时间；超时、协方差过大或TF过期时本周期发零指令。
+  state_timeout: 0.30
+  tf_timeout: 0.30
+  max_position_covariance: 1.0  # m^2
+  max_yaw_covariance: 0.50      # rad^2
+  # 10 Hz控制循环超过250 ms时先发一个零指令，防止暂停后直接恢复旧控制量。
+  max_control_cycle_interval: 0.25
+  # 候选搜索超过80 ms时复用上一完整可行指令；连续3次超时则安全停机。
+  solver_time_limit: 0.080
+  max_consecutive_solver_timeouts: 3
+  # Qianxun模式由上面的时间戳/协方差门控；LIO模式由launch额外开启NDT质量门控。
+  require_localization_quality: false
+  localization_quality_topic: /localization/quality_ok
+  localization_quality_timeout: 0.30
+  # 首次全局投影，后续在缓存段附近搜索；偏离窗口超过2m才全局重捕获。
+  projection_search_back_segments: 20
+  projection_search_forward_segments: 80
+  projection_global_fallback_distance: 2.0
+
+  # ===== 速度/加速度限制 =====
+  max_vel_x: 0.5
+  max_vel_x_backwards: 0.3
+  max_vel_theta: 0.35
+  acc_lim_x: 0.8
+  acc_lim_theta: 0.25
+  # 弯道前瞻检测到明显曲率时允许更快建立角速度；直线仍用0.25抑制定位抖动
+  curve_acc_lim_theta: 0.5
+  curve_threshold: 0.1
+
+  # ===== MPC 参数 =====
+  prediction_dt: 0.1
+  # 30 步 × 0.1s = 3.0s 预测窗口 (覆盖完整振荡周期)
+  prediction_steps: 30
+  # omega 候选采样数 (在 [-max_vel_theta, max_vel_theta] 均匀采样)
+  num_omega_samples: 25
+  # 在线速度加速度可达窗口内与角速度联合搜索。三个样本在
+  # 改善坡面减速决策的同时，控制每个周期的额外计算量。
+  num_v_samples: 3
+  # 两段控制序列：前0.6s使用当前候选角速度，后续允许选择第二个角速度。
+  # 两段之间的变化量仅允许一个prediction_dt内可达到的角速度增量，防止
+  # 优化器把当前必须执行的纠偏长期推迟到omega_future。
+  control_hold_steps: 6
+  num_second_omega_samples: 5
+
+  # ===== 代价权重 (轮次 #15 验证的最优配置) =====
+  # 兼顾定位横跳抑制与长距离/侧坡横向纠偏；1.5在个别长路线纠偏不足
+  # Nav #90: GT CTE mean=0.31m, max=0.63m. The vehicle remained outside the
+  # curve because steering smoothness dominated path tracking. Increase path
+  # error penalties and relax steering penalties; the hard angular-acceleration
+  # window still prevents abrupt command reversals on straight segments.
+  weight_cte: 3.0
+  weight_heading: 3.0
+  weight_omega: 0.25
+  weight_omega_rate: 1.5
+  # 使优化器可以在参考速度附近自主减速，但不会为了短时降低
+  # CTE 而长时间停车或在相邻周期大幅改变线速度。
+  weight_speed: 1.0
+  weight_v_rate: 0.5
+  # 根据 v*kappa/转向增益给出稳态角速度参考，减少弯道入口滞后和切角。
+  weight_curvature_feedforward: 1.0
+  weight_obstacle: 10.0
+
+  # ===== 目标容差 =====
+  goal_tolerance_xy: 0.5
+  goal_tolerance_yaw: 0.3
+
+  # ===== 路径跟踪 =====
+  # 以当前位置前后各0.4m计算中心弦切向，避免只向前看导致弯前提前转向。
+  heading_lookahead: 0.8
+  # Convert lateral error into a bounded recovery-heading reference. On a
+  # slope, low speed makes the 3 s horizon too short for tangent tracking
+  # alone to remove a persistent CTE.
+  # 提高小偏差阶段的纠偏强度：在0.5m/s时，CTE=0.05/0.10m分别产生
+  # 约1.6/3.3deg回归航向，不等偏差扩大后才开始明显修正。
+  cte_heading_gain: 0.40
+  cte_heading_soft_speed: 0.20
+  # 短坡实验中CTE约0.83m时车辆航向已达到-29deg，原25deg上限会让MPC
+  # 误判为过度转向并提前撤销纠偏；放宽到45deg，仅在大误差低速时生效。
+  max_cte_heading_correction: 0.7854  # 45 deg
+  # 在线增益显示侧坡转向响应不足时，根据剩余回归航向误差计算最低必要角速度。
+  # 补偿仍严格服从每周期角加速度窗口，不产生阶跃指令。
+  enable_turn_authority_assist: true
+  # Use 0.10 m as the tracking-quality boundary. Above it, persistent
+  # side-slope correction is allowed; below 0.08 m it is released.
+  turn_assist_cte_threshold: 0.10
+  turn_assist_release_cte_threshold: 0.08
+  turn_assist_heading_threshold: 0.0524  # 3 deg
+  turn_assist_time_constant: 1.5
+  # Keep correcting when body yaw is near the recovery heading but |CTE| is
+  # still growing on a side slope. Release only after the error is small or
+  # has decreased continuously for one second.
+  turn_assist_cte_rate_alpha: 0.20
+  turn_assist_cte_rate_threshold: 0.01  # m/s growth of |CTE|
+  turn_assist_cte_rate_gain: 0.80
+  turn_assist_rate_heading_alpha: 0.35
+  turn_assist_max_rate_heading: 0.1745  # 10 deg
+  turn_assist_release_time: 1.0
+
+  # ===== Side-slope lateral disturbance observer =====
+  # 使用上一控制周期保存的模型预测CTE与当前实测CTE之差作为创新量，
+  # 估计预测模型尚未包含的车体横向扰动；不是再用CTE差分近似模型残差。
+  enable_lateral_disturbance_observer: true
+  lateral_disturbance_time_constant: 0.8
+  lateral_disturbance_release_time_constant: 0.6
+  # Keep the observer active during the low-speed final slope correction.
+  lateral_disturbance_min_speed: 0.05
+  lateral_disturbance_deadband: 0.015
+  max_lateral_disturbance: 0.12       # m/s
+  max_lateral_disturbance_heading: 0.2094  # 12 deg
+
+  # ===== 速度规划 =====
+  curvature_decel: 0.5
+  goal_decel_dist: 3.0
+  min_vel_x: 0.05
+  # 到达最后路径段但尚未进入目标容差时，限制速度并直接朝目标点恢复，
+  # 防止越过终点后沿末段切线以最高速度继续驶离。
+  terminal_recovery_speed: 0.15
+  terminal_alignment_distance: 2.0
+  terminal_bearing_tolerance: 0.20  # 11.5 deg
+  terminal_bearing_gain: 0.8
+
+  # ===== 地形感知 (创新点3) =====
+  # terrain_decel: 高代价区域减速系数 v *= max(1 - decel*cost, 0.2)
+  #   0.6 在 0.2m 分辨率下变化太快导致速度振荡，先关闭排查
+  terrain_decel: 0.0
+  # slip_compensation_gain: 侧坡滑移补偿增益 ω_slip = -gain * slope_lat * v
+  #   0.3 在高频梯度下导致 omega 预测帧间不一致，先关闭排查
+  slip_compensation_gain: 0.0
