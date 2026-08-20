@@ -1,61 +1,68 @@
 # desert-tracker-real
 
-中文的工程边界、接口表、算法替换点和核心命令见
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+面向真实履带车辆的地形感知自主导航工程，包含千寻 GNSS 与 YIS525 IMU
+融合定位、LIO-SAM 建图/可选定位、地形 Hybrid A* 全局规划、履带车 MPC
+轨迹跟踪以及 ZMQ–SocketCAN 实车接口。
 
-Real-vehicle deployment project for the terrain-aware Hybrid A* and tracked
-vehicle MPC developed in `desert-tracker`.
+更详细的工程边界、接口表、TF 所有权和算法替换点见
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，多地图管理见
+[`docs/MULTI_MAP_MODULES.md`](docs/MULTI_MAP_MODULES.md)。
 
-The project keeps the proven Qianxun/YIS525/ZMQ/SocketCAN contract from
-`plan_try_genzong_xieposhadi`, while replacing the old path generator and
-controller with the `desert-tracker` navigation algorithms.
+> 当前阶段以低速实车试验和问题逐项验证为目标。软件安全门控不能替代实体急停，
+> `PoliBrake` 当前只会强制速度与角速度归零，尚未被确认是车辆的物理制动协议。
 
-## Architecture
+## 系统架构
 
 ```text
-Qianxun GNSS + YIS525
-        |
-        v
-vehicle_interface
-  CurGNSS + /bus/location
-        |
-        +--> ROS Odometry + map/odom/base_link TF
-                         |
-                         v
-              terrain Hybrid A* (move_base global plugin)
-                         |
-                         v
-              tracked-vehicle MPC (move_base local plugin)
-                         |
-                     /cmd_vel
-                         |
-                         v
-              PoliAcc / PoliSteer / PoliBrake (software stop request)
-                         |
-                         v
-                 SocketCAN 0x200 / 0x203
+千寻 GNSS + YIS525 IMU
+          |
+          v
+vehicle_interface（定位融合与实车接口）
+          |
+          +--> /vehicle/state + map/odom/base_link TF
+                                  |
+                                  v
+                       地形 Hybrid A* 全局规划
+                                  |
+                                  v
+                         履带车 MPC 轨迹跟踪
+                                  |
+                              /cmd_vel
+                                  |
+                                  v
+                 PoliAcc / PoliSteer / PoliBrake
+                                  |
+                                  v
+                        SocketCAN 0x200 / 0x203
 ```
 
-## Catkin packages
+系统支持两种互斥定位模式：
 
-| Package | Responsibility |
+- `qianxun`：千寻/YIS525 融合定位负责 `map -> odom -> base_link`；
+- `lio_sam`：固定地图定位器负责 `map -> odom`，LIO-SAM 负责
+  `odom -> base_link`。
+
+两种模式共享同一个 YIS525 驱动和 `/imu/data`，不会重复打开 IMU 串口。
+
+## Catkin 软件包
+
+| 软件包 | 作用 |
 |---|---|
-| `lio_sam` (`src/LIO-SAM`) | Modified LIO-SAM frontend with switchable map-to-odom TF ownership |
-| `terrain_map_builder` | Align LIO-SAM PCD maps and build occupancy/DEM/TCM1 planner maps |
-| `navigation` | Terrain-aware Hybrid A* and tracked-vehicle MPC plugins |
-| `vehicle_interface` | Qianxun + YIS525 fusion, ROS navigation adapter and ZMQ-CAN bridge |
-| `pointcloud_preprocess` | Convert real RSHELIOS `/rslidar_points` to the LIO-SAM `/points_raw` contract |
-| `fixed_map_localization` | Optional fixed-map NDT correction for LIO-SAM runtime localization |
-| `navigation_evaluation` | Per-run CSV/JSON/plots using real-vehicle topics instead of Gazebo truth |
-| `slam_evaluation` | Offline TUM export and reproducible EVO APE/RPE evaluation |
-| `vehicle_bringup` | Minimal real-vehicle launch and safety configuration |
+| `lio_sam`（`src/LIO-SAM`） | 修改后的 LIO-SAM，支持切换 TF 所有权 |
+| `terrain_map_builder` | 对齐 LIO-SAM PCD，并生成占据、DEM 和 TCM1 地图 |
+| `navigation` | 地形 Hybrid A* 和履带车 MPC 插件 |
+| `vehicle_interface` | 千寻/YIS525 融合、ROS 状态适配和 ZMQ-CAN 桥 |
+| `pointcloud_preprocess` | 将 RSHELIOS 点云转换为 LIO-SAM 接口 |
+| `fixed_map_localization` | 基于固定 PCD 的 NDT 定位修正 |
+| `navigation_evaluation` | 实车导航 CSV、JSON 和图表评估 |
+| `slam_evaluation` | TUM 轨迹导出和 EVO APE/RPE 评估 |
+| `vehicle_bringup` | 实车启动入口和安全配置 |
 
-Gazebo, vehicle meshes, RViz-only packages, historical plots and simulation
-logs are deliberately not copied. The modified LIO-SAM core is retained
-because localization switching requires deterministic TF ownership; its map
-output still connects to planning through the documented PCD contract.
+项目不包含 Gazebo、车辆网格、仅用于仿真的 RViz 包及历史仿真日志。
 
-## Build on Ubuntu 20.04 / ROS Noetic
+## 运行环境与编译
+
+目标环境：Ubuntu 20.04、ROS Noetic。
 
 ```bash
 cd <desert-tracker-real所在目录>
@@ -65,292 +72,316 @@ source devel/setup.bash
 python3 -m pip install pyserial pyzmq
 ```
 
-Required ROS packages include `move_base`, `map_server`, PCL ROS and Grid Map.
+还需要安装 `move_base`、`map_server`、PCL ROS 和 Grid Map 等 ROS 软件包。
 
-## LIO-SAM map interface
+运行不依赖 ROS 的合同测试：
 
-The navigation stack consumes one directory, not a live SLAM topic. This keeps
-mapping and autonomous driving separated and reproducible.
+```bash
+python3 -m unittest discover -s test -v
+```
 
-Expected pipeline:
+## 多地图目录
+
+每张地图都是一个相互独立的模块：
 
 ```text
-LIO-SAM save_map -> GlobalMap.pcd
-                 -> optional rigid alignment to O-XYZ/map
+maps/<map_module>/
+  module.yaml                    # 固定GNSS原点和地图轴旋转
+  raw/GlobalMap.pcd              # LIO-SAM原始地图
+  aligned/GlobalMap.pcd          # 对齐到导航坐标系的地图
+  planner/traversability_map.yaml
+  planner/traversability_map.pgm
+  planner/elevation_map.dem
+  planner/obstacle_map.pgm
+  planner/terrain_cost.bin
+  planner/terrain_cost_coarse.bin
+
+bags/<map_module>/               # 建图与定位bag
+results/<map_module>/            # 导航和SLAM评估结果
+```
+
+仓库已预留 `site_a` 和 `site_b`。默认使用 `site_a`，切换地图只需传递：
+
+```bash
+map_module:=site_b
+```
+
+也可以新建地图模块：
+
+```bash
+rosrun terrain_map_builder map_module.py create site_c \
+  --origin-lat 22.000000 \
+  --origin-lon 114.000000 \
+  --origin-alt 0.0 \
+  --yaw-enu-to-oxyz-deg 0.0
+```
+
+真实原点和轴旋转必须分别写入对应模块的 `module.yaml`，不能每次启动重新使用
+第一帧定位作为原点。
+
+## 建图流程
+
+规划系统读取固定地图目录，不直接读取在线 SLAM 话题。建图与自主驾驶分离，便于
+复现和审查：
+
+```text
+LIO-SAM save_map -> raw/GlobalMap.pcd
+                 -> 刚体对齐到O-XYZ/map
+                 -> aligned/GlobalMap.pcd
                  -> traversability_map.yaml/.pgm
                  -> elevation_map.dem
                  -> terrain_cost.bin
                  -> terrain_cost_coarse.bin
 ```
 
-Create a named map module.  The name is the only switch needed by later
-mapping, navigation and evaluation launches:
+### 在线采集建图数据
+
+完成串口、雷达模式和初始外参配置后：
 
 ```bash
-PROJECT_ROOT="$(realpath "$(rospack find vehicle_bringup)/../..")"
-MAP_MODULE="dune_a"
-rosrun terrain_map_builder map_module.py create "${MAP_MODULE}" --origin-lat 22.000000 --origin-lon 114.000000 --origin-alt 0.0 --yaw-enu-to-oxyz-deg 0.0
-```
-
-Each module owns `maps/<name>/module.yaml`, `raw/`, `aligned/` and `planner/`.
-Its bags are written to `bags/<name>/`, while evaluations are written to
-`results/<name>/<localization_mode>/`.  See
-[`docs/MULTI_MAP_MODULES.md`](docs/MULTI_MAP_MODULES.md).
-
-After using the LIO-SAM `save_map` service, place `GlobalMap.pcd` in `raw/`.
-If the saved map is already expressed in the same initial vehicle/O-XYZ frame,
-the following alignment can be identity. Otherwise provide the measured rigid
-transform, or pass LIO-SAM's `transformations.pcd` as `reference_pose_file`:
-
-Write the measured alignment into this launch's defaults once, then run:
-
-```bash
-roslaunch terrain_map_builder align_lio_map.launch map_module:="${MAP_MODULE}"
-```
-
-Generate all planner layers:
-
-```bash
-roslaunch terrain_map_builder build_planner_map.launch map_module:="${MAP_MODULE}"
-```
-
-Before driving, verify that the PGM origin, the TCM1 origins and the Qianxun
-control-point coordinates overlap in RViz. A visually plausible map with a
-different origin or yaw is unsafe.
-
-## Interface-only test with the existing plan_try sensor processes
-
-Keep the original sensor/fusion processes running and start this project's
-bridge without duplicating serial readers:
-
-```bash
-roslaunch vehicle_interface io.launch start_sensors:=false start_can:=false
-```
-
-Then start navigation with CAN still disabled:
-
-```bash
-roslaunch vehicle_bringup navigation.launch
-```
-
-Check `/odometry/imu_incremental`, `/imu/data`, TF,
-`/vehicle/state`（实测时间戳、`base_link`速度约定）,
-`/hybrid_astar/plan` and `/cmd_vel`.
-
-## LiDAR use: offline mapping and optional online localization
-
-The normal `qianxun` mode does not start LiDAR or LIO-SAM.  A separate mapping
-session is used to build the fixed map, while the optional `lio_sam` mode starts
-the same sensor frontend against that already-built map.  Sensor topics remain
-the same as simulation:
-
-```text
-RSHELIOS driver (XYZIRT) -> /rslidar_points -> native ring/time adapter -> /points_raw
-YIS525 -> /imu/data
-LIO-SAM -> saved GlobalMap.pcd
-```
-
-After setting the serial ports, calibration and LiDAR extrinsic defaults once
-in the launch/config files, the mapping commands stay short:
-
-```bash
+MAP_MODULE="site_a"
 roslaunch vehicle_bringup mapping.launch map_module:="${MAP_MODULE}"
 ```
 
-For reproducible Qianxun/LIO-SAM alignment, record the processed point cloud,
-the one shared IMU stream and the fused Qianxun state together:
+需要保留可复现数据时，统一录制处理后点云、共享 IMU、千寻状态和 TF：
 
 ```bash
 roslaunch vehicle_bringup record_mapping_bag.launch map_module:="${MAP_MODULE}"
 ```
 
-For a reusable map, store the fixed Qianxun origin and axis rotation in that
-module's `module.yaml`. If the first mapping run intentionally uses the first
-GNSS fix as origin, write the reported `OriginLat`, `OriginLon`, `OriginAlt`
-and `YawEnuToOxyzDeg` back with `map_module.py configure`; later launches load
-them automatically when `map_module` is selected.
+录包节点等待 `/points_raw` 和 `/imu/data` 都有新鲜数据后才启动 rosbag，记录：
 
-The recorder starts the real RSHELIOS driver and converter before recording
-`/points_raw`, `/imu/data`, `/bus/location`, `/tf` and `/tf_static`. The real
-driver's unconverted topic is `/rslidar_points`; LIO-SAM never subscribes to it
-directly. It waits three seconds for initialization and then requires fresh
-messages on both `/points_raw` and `/imu/data`; a timeout stops the launch
-without creating a bag.
+```text
+/points_raw
+/imu/data
+/bus/location
+/tf
+/tf_static
+```
 
-The vehicle IPC system clock is the sole absolute timestamp domain. RSHELIOS
-runs with `use_lidar_clock: false`, Yesense stamps `/imu/data` from ROS system
-time on the same IPC, and point `time` remains only a relative in-scan offset.
-Replay a recorded run with sensors and CAN disabled:
+`/tf_static` 用于保存采集时的 `base_link -> imu_link` 和
+`base_link -> velodyne` 安装关系。离线回放默认使用包内静态 TF，避免重复发布。
+
+### 离线回放与检查
 
 ```bash
+rosrun terrain_map_builder check_mapping_bag.py \
+  "bags/${MAP_MODULE}"/mapping_run_*.bag
+
 roslaunch vehicle_bringup bag_mapping.launch
 rosbag play --clock "bags/${MAP_MODULE}"/mapping_run_*.bag
 ```
 
-Before mapping, validate all split bag parts:
+由本项目录制的 bag 包含 `/tf_static`。回放不包含静态 TF 的旧包时使用：
 
 ```bash
-rosrun terrain_map_builder check_mapping_bag.py "bags/${MAP_MODULE}"/mapping_run_*.bag
+roslaunch vehicle_bringup bag_mapping.launch bag_has_static_tf:=false
 ```
 
-Save and stop the mapping stack:
+### 保存、对齐和生成规划地图
 
 ```bash
 rosrun terrain_map_builder map_module.py save "${MAP_MODULE}" --resolution 0.2
+
+roslaunch terrain_map_builder align_lio_map.launch \
+  map_module:="${MAP_MODULE}"
+
+roslaunch terrain_map_builder build_planner_map.launch \
+  map_module:="${MAP_MODULE}"
 ```
 
-Then run `align_lio_map.launch` and `build_planner_map.launch`. In `qianxun`
-mode navigation uses only the generated static map and Qianxun/YIS525
-positioning. In `lio_sam` mode LIO-SAM may run online for localization only.
-Neither mode adds a PointCloud2 obstacle layer, and MPC does not receive live
-LiDAR obstacles.
+如果首次建图有意使用第一帧 GNSS 作为原点，应将输出的 `OriginLat`、
+`OriginLon`、`OriginAlt` 和 `YawEnuToOxyzDeg` 固化回模块配置。
 
-## Full real-vehicle launch
+自主驾驶前必须在 RViz 中确认：PGM 原点、TCM1 原点、对齐后的 PCD 与千寻控制点
+坐标一致。地图看起来合理但原点或 yaw 不同仍然是不安全的。
 
-Initialize SocketCAN first:
+## 激光雷达与 IMU 接口
+
+```text
+RSHELIOS（XYZIRT）
+  -> /rslidar_points
+  -> ring/time适配器
+  -> /points_raw
+
+YIS525 -> /imu/data
+LIO-SAM -> GlobalMap.pcd 或定位里程计
+```
+
+RSHELIOS 使用 `use_lidar_clock: false`，点云帧时间来自工控机系统时钟，点内
+`time` 仅保留扫描内相对时间。YIS525 在同一工控机上使用 ROS 系统时间戳。
+
+安装外参通过启动参数传入：
+
+- `lidar_xyz`、`lidar_ypr`：`base_link -> velodyne`；
+- `imu_xyz`、`imu_ypr`：`base_link -> imu_link`；
+- `imu_ypr` 和 `lidar_ypr` 的顺序均为 `yaw pitch roll`，单位为弧度。
+
+LIO-SAM 的 `extrinsicTrans`、`extrinsicRot`、`extrinsicRPY` 和
+`imuTimeOffset` 仍需根据整车最终安装结果填写，不能直接使用开发板标定值。
+
+## 接口联调（不发送 CAN）
+
+如果原千寻/IMU 进程已经运行，不要重复打开串口：
+
+```bash
+roslaunch vehicle_interface io.launch \
+  start_sensors:=false \
+  start_can:=false
+
+roslaunch vehicle_bringup navigation.launch map_module:=site_a
+```
+
+检查：
+
+```text
+/odometry/imu_incremental
+/imu/data
+/vehicle/state
+/hybrid_astar/plan
+/cmd_vel
+map -> odom -> base_link TF
+base_link -> imu_link TF
+```
+
+## 实车启动
+
+先初始化 SocketCAN：
 
 ```bash
 sudo ip link set can0 down
 sudo ip link set can0 up type can bitrate 500000
 ```
 
-Write the measured calibration values into the launch/config defaults once.
-`UNKNOWN` heading mode is blocked by the command bridge. Normal experiment
-commands are then one line:
+千寻定位模式：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:="${MAP_MODULE}" localization_mode:=qianxun
+roslaunch vehicle_bringup full_system.launch \
+  map_module:=site_a \
+  localization_mode:=qianxun
 ```
 
-To compare against LiDAR localization, use the same processed map and the
-aligned PCD from which it was generated:
+LIO-SAM 固定地图定位模式：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:="${MAP_MODULE}" localization_mode:=lio_sam
+roslaunch vehicle_bringup full_system.launch \
+  map_module:=site_a \
+  localization_mode:=lio_sam
 ```
 
-In `qianxun` mode the bridge owns `/odometry/imu_incremental` and TF. In
-`lio_sam` mode those bridge outputs are automatically disabled; LIO-SAM owns
-`odom -> base_link` and the fixed-map localizer owns `map -> odom`. The live
-PointCloud2 obstacle layer remains absent in both modes, so MPC is still a
-path-tracking controller.
+默认实车最高速度为 `0.15 m/s`。正式启动前应完成：
 
-Both modes share one physical YIS525. Its driver opens the serial port once and
-is the sole publisher of `/imu/data`; Qianxun fusion and LIO-SAM subscribe to
-that exact message and header timestamp. The bridge no longer republishes IMU.
-The driver checks ROS-master ownership and stops on a duplicate publisher.
+- 实体急停测试；
+- CAN 速度、转向方向和三路独立超时测试；
+- `/vehicle/state`、TF、定位质量和控制周期 watchdog 测试；
+- 地图与定位坐标重合检查；
+- MPC 求解超时和上一可行控制回退测试。
 
-The RSHELIOS SDK is configured for `POINT_TYPE=XYZIRT` and publishes `/rslidar_points`.
-The adapter preserves its native `ring` and converts absolute `timestamp` to
-LIO-SAM relative `time` on `/points_raw`; it does not infer rings from angles.
-LiDAR-to-IMU extrinsics and `imuTimeOffset` remain zero identity placeholders
-until measured on the complete vehicle; development-board values are not used.
+普通 `qianxun` 导航模式不会启动 LiDAR，也没有动态 PointCloud2 障碍层。
+`lio_sam` 模式使用 LiDAR 做固定地图定位，但同样不向 MPC 提供实时点云避障。
 
-During bag mapping, record `/lio_sam/mapping/odometry` to a compact result bag.
-The alignment tool accepts the original split sensor bags and that result bag
-together, so their original timestamps remain the synchronization key:
+## 千寻与 LIO-SAM 地图对齐
+
+建图期间可以额外记录紧凑的 LIO-SAM 结果：
 
 ```bash
-rosbag record -O "bags/${MAP_MODULE}/lio_result.bag" /lio_sam/mapping/path /lio_sam/mapping/odometry
-rosrun terrain_map_builder align_qianxun_lio.py "bags/${MAP_MODULE}"/mapping_run_*.bag "bags/${MAP_MODULE}/lio_result.bag" --output "maps/${MAP_MODULE}/aligned/qianxun_lio_alignment.yaml"
+rosbag record -O "bags/${MAP_MODULE}/lio_result.bag" \
+  /lio_sam/mapping/path \
+  /lio_sam/mapping/odometry
 ```
 
-The command reports fit RMSE and prints the `translation_x`, `translation_y`
-and `yaw_deg` arguments for `align_lio_map.launch`. Use a trajectory containing
-turns or a loop; a straight line does not adequately constrain map yaw.
+使用原始时间戳拟合千寻轨迹与 LIO-SAM 轨迹：
 
-## Per-run real-vehicle evaluation
+```bash
+rosrun terrain_map_builder align_qianxun_lio.py \
+  "bags/${MAP_MODULE}"/mapping_run_*.bag \
+  "bags/${MAP_MODULE}/lio_result.bag" \
+  --output "maps/${MAP_MODULE}/aligned/qianxun_lio_alignment.yaml"
+```
 
-The evaluator starts by default with `full_system.launch`. It begins on every
-`/move_base/goal` and saves a numbered run when the action succeeds, aborts,
-is preempted, or the launch is stopped:
+工具会输出拟合 RMSE 以及 `translation_x`、`translation_y`、`yaw_deg`。
+采集轨迹必须包含转弯或闭环，单一直线不足以约束地图 yaw。
+
+## 实车评估
+
+`full_system.launch` 默认启动评估器。每次 `/move_base/goal` 都会创建独立目录：
 
 ```text
-${PROJECT_ROOT}/results/${MAP_MODULE}/qianxun/nav_N/
-${PROJECT_ROOT}/results/${MAP_MODULE}/lio_sam/nav_N/
+results/${MAP_MODULE}/qianxun/nav_N/
+results/${MAP_MODULE}/lio_sam/nav_N/
 ```
 
-Every run manifest, metrics JSON and comparison CSV records `map_module`,
-`localization_mode` and a fingerprint of the exact module/config/map layers,
-so regenerated maps cannot be silently mixed with older evaluations.
+评估结果包含：
 
-Each run contains raw CSV streams, JSON metrics and plots for the global path,
-Qianxun reference trajectory, selected localization, controller odometry,
-cross-track/goal error, commands, MPC diagnostics, prediction horizons,
-terrain attitude and planner Pareto statistics. It also records `/imu/data`,
-the complete Qianxun/GNSS state and raw CAN motor feedback directly during the
-run, producing `imu_raw.csv`, `motor_feedback_raw.csv` and IMU/GPS/motor
-diagnostic plots. LiDAR remains outside the evaluator; use a mapping bag only
-when point clouds are actually required. Disable the evaluator with
-`start_evaluator:=false`.
+- 全局路径、定位轨迹、控制器里程计；
+- CTE、终点误差、速度和角速度指令；
+- MPC 诊断、预测时域和求解时间；
+- IMU、GNSS 和 CAN 电机反馈；
+- 地形姿态和规划器 Pareto 统计；
+- 地图模块名、定位模式以及地图文件指纹。
 
-SLAM accuracy is kept separate from navigation tracking evaluation. Export a
-trajectory and run rigid SE(3) EVO metrics without scale correction with:
+不需要评估时：
 
 ```bash
-rosrun slam_evaluation odom_to_tum.py "bags/${MAP_MODULE}/lio_result.bag" "results/${MAP_MODULE}/slam/lio.tum" --topic /lio_sam/mapping/odometry
-rosrun slam_evaluation evaluate_trajectories.py "results/${MAP_MODULE}/slam/ground_truth.tum" "results/${MAP_MODULE}/slam/lio.tum" "results/${MAP_MODULE}/slam/evo"
+start_evaluator:=false
 ```
 
-Additional roll, pitch, gyro and lever-arm calibration arguments are exposed by
-`vehicle_interface/launch/io.launch` and should be filled there or passed
-through a site-specific launch file before slope experiments.
+SLAM 精度评估与导航跟踪评估分开执行：
 
-## Coordinate contract
+```bash
+rosrun slam_evaluation odom_to_tum.py \
+  "bags/${MAP_MODULE}/lio_result.bag" \
+  "results/${MAP_MODULE}/slam/lio.tum" \
+  --topic /lio_sam/mapping/odometry
 
-The retained plan_try state uses O-XYZ heading measured from global `+Y`, with
-counterclockwise positive. ROS uses yaw from global `+X`. The adapter performs:
+rosrun slam_evaluation evaluate_trajectories.py \
+  "results/${MAP_MODULE}/slam/ground_truth.tum" \
+  "results/${MAP_MODULE}/slam/lio.tum" \
+  "results/${MAP_MODULE}/slam/evo"
+```
+
+## 坐标约定
+
+千寻保留的 O-XYZ 航向角以全局 `+Y` 为零、逆时针为正；ROS yaw 以全局
+`+X` 为零。适配器执行：
 
 ```text
 yaw_ros = wrap(head_oxyz + 90 degrees)
 ```
 
-It does not alter X/Y positions. Therefore the LIO-SAM map and Qianxun origin
-must already describe the same physical O-XYZ axes.
+适配器不交换 X/Y，因此千寻原点、LIO-SAM 地图和规划地图必须描述同一套
+O-XYZ 物理坐标轴。
 
-The vehicle's tail-first speed sign remains isolated in the SocketCAN bridge.
-The planner and MPC always use standard logical commands: positive `v` is
-forward and positive `omega` is counterclockwise.
+车辆采用尾部作为逻辑前进方向，符号反转只存在于 SocketCAN 边界。规划器与
+MPC 始终使用标准逻辑：`v > 0` 表示前进，`omega > 0` 表示逆时针旋转。
 
-## Safety gates retained
+## 安全门控
 
-The real interface bridge sends zero speed/yaw and asserts `PoliBrake=1` when:
+出现以下任一情况，实车接口会发送零速度、零角速度，并置
+`PoliBrake=1` 软件停车请求：
 
-- fused state is stale;
-- `FusionValid`, `PositionValid` or `ControlFrameReady` is false;
-- the declared YIS525 heading mode is `UNKNOWN`;
-- `/cmd_vel` is stale.
+- 融合状态超时；
+- `FusionValid`、`PositionValid` 或 `ControlFrameReady` 无效；
+- YIS525 航向模式为 `UNKNOWN`；
+- `/cmd_vel` 超时。
 
-The CAN bridge records independent receive times for `PoliAcc`, `PoliSteer`
-and `PoliBrake`. Motion remains inhibited until all three channels have been
-seen, and any one missing or stale channel independently forces zero speed and
-yaw rate. These software checks do not replace the physical emergency stop.
-The inherited CAN `0x200` payload
-contains only signed speed and yaw-rate `int16` fields; `PoliBrake` is not a
-verified physical-brake bit and currently means "force both motion fields to
-zero". Active braking must not be claimed until the vehicle's VCU protocol
-document and a stationary hardware test identify a separate brake field.
+CAN 桥分别记录 `PoliAcc`、`PoliSteer`、`PoliBrake` 的接收时间。只有三路都
+已收到且新鲜时才允许运动；任意一路缺失或超时都会独立触发零速度和零角速度。
 
-The tracked chassis is allowed to pivot: a valid `v=0, omega!=0` command is
-forwarded to CAN. The optional `--zero-steer-when-stopped` bridge switch is not
-used by the real-vehicle launch.
+当前 `0x200` 报文只确认包含有符号速度和角速度两个 `int16` 字段。
+`PoliBrake` 还不是经过验证的物理制动位，只表示将两个运动字段强制清零。
+在获得 VCU 协议并完成静止硬件试验前，不能把它描述为主动刹车。
 
-The MPC additionally rejects stale `/vehicle/state`, stale TF and excessive
-pose covariance. In `lio_sam` mode it also requires the fixed-map localizer's
-latched `/localization/quality_ok`, which expires when trusted NDT matches stop.
-At 10 Hz, a control-cycle gap first emits a zero command. Candidate search is
-limited to 80 ms: one timeout reuses the previous complete feasible command,
-while three consecutive timeouts emit a zero command. The selected path
-segment is cached and subsequent projections use a bounded local segment
-window, with global reacquisition only after a large path-distance mismatch.
+履带底盘允许原地转向，合法的 `v=0, omega!=0` 会继续发送到 CAN。实车启动
+不会启用 `--zero-steer-when-stopped`。
 
-## Validation
+MPC 还会检查 `/vehicle/state`、TF、定位质量、位姿协方差和控制周期。候选搜索
+限制为 80 ms：单次超时复用上一条完整可行控制，连续三次超时发送零指令。
+路径投影使用局部窗口和缓存，只有路径距离失配过大时才进行全局重捕获。
 
-Pure-Python contract tests can run without ROS:
+## 注意事项
 
-```bash
-python3 -m unittest discover -s test -v
-```
-
-The included `maps/sample_desert` is only for software/interface checks and is
-not aligned to any real GNSS origin.
+- 本项目包含真实车辆接口，建议 GitHub 仓库保持 Private；
+- 不要提交真实 rosbag、PCD、导航结果、账号令牌或私钥；
+- `maps/sample_desert` 仅用于软件和接口检查，不对应任何真实 GNSS 原点；
+- 第一次实车运行必须安排安全员并保持实体急停可用。
