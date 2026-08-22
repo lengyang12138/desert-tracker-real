@@ -18,8 +18,9 @@ class ProjectContractTests(unittest.TestCase):
                   encoding="utf-8") as stream:
             cmake = stream.read()
         self.assertIn("find_package(catkin", cmake)
+        self.assertIn("set(CATKIN_TOPLEVEL_FIND_PACKAGE TRUE)", cmake)
         self.assertIn("catkin_workspace()", cmake)
-        self.assertNotIn("${catkin_EXTRAS_DIR}/toplevel.cmake", cmake)
+        self.assertIn("${catkin_EXTRAS_DIR}/all.cmake", cmake)
 
     def test_runtime_output_directories_are_precreated(self):
         expected = (
