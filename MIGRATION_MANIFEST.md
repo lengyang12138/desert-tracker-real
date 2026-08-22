@@ -26,7 +26,7 @@ their roles are replaced by the ROS navigation plugins.
 
 ## New integration code
 
-- `/bus/location` JSON to ROS Odometry/IMU/TF conversion;
+- `/fusion_location` JSON to ROS Odometry/IMU/TF conversion;
 - `/cmd_vel` to the retained ZMQ policy contract;
 - state/command health gates;
 - Catkin package boundaries, launch files, map contract and unit tests.

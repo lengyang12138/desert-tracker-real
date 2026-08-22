@@ -124,7 +124,7 @@ int main(int argc, char** argv)
   std::vector<std::string> arguments = {
       "rosbag", "record", "--lz4", "--split",
       "--size=" + std::to_string(split_size_mb), "-O", output_prefix,
-      points_topic, imu_topic, "/bus/location", "/tf", "/tf_static"};
+      points_topic, imu_topic, "/fusion_location", "/tf", "/tf_static"};
   std::vector<char*> exec_arguments;
   exec_arguments.reserve(arguments.size() + 1);
   for (std::string& argument : arguments)

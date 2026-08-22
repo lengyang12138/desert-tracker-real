@@ -6,7 +6,9 @@
   <arg name="map_config_file" default="$(arg project_root)/maps/$(arg map_module_dir)/module.yaml"/>
   <arg name="map_dir" default="$(arg project_root)/maps/$(arg map_module_dir)/planner"/>
   <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="gnss_baud" default="115200"/>
   <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <arg name="imu_baud" default="460800"/>
   <!-- One physical YIS525 and one ROS publisher, shared by both estimators. -->
   <arg name="imu_data_topic" default="/imu/data"/>
   <arg name="imu_xyz" default="0 0 0"/>
@@ -25,18 +27,23 @@
   <arg name="imu_roll_zero_deg" default="3.6"/>
   <arg name="imu_pitch_zero_deg" default="3.8"/>
   <arg name="imu_gyro_z_bias_dps" default="0"/>
-  <arg name="lever_x" default="-0.08"/>
-  <arg name="lever_y" default="0"/>
-  <arg name="lever_z" default="-0.99"/>
+  <arg name="lever_x" default="-0.114"/>
+  <arg name="lever_y" default="0.004"/>
+  <arg name="lever_z" default="-0.970"/>
   <arg name="origin_lat" default=""/>
   <arg name="origin_lon" default=""/>
   <arg name="origin_alt" default="0"/>
   <arg name="yaw_enu_to_oxyz_deg" default="0"/>
   <arg name="can_iface" default="can0"/>
+  <arg name="speed_sign" default="-1"/>
+  <arg name="steer_sign" default="1"/>
+  <arg name="feedback_sign" default="-1"/>
   <arg name="motor_feedback_gear_ratio" default="1.0"/>
   <arg name="max_speed" default="0.15"/>
   <arg name="localization_mode" default="qianxun"/>
   <arg name="start_evaluator" default="true"/>
+  <arg name="load_vehicle_model" default="true"/>
+  <arg name="start_rviz" default="true"/>
   <arg name="evaluation_output_dir"
        default="$(arg project_root)/results/$(arg map_module_dir)/$(arg localization_mode)"/>
 
@@ -49,7 +56,9 @@
     <arg name="use_map_config" value="true"/>
     <arg name="map_config_file" value="$(arg map_config_file)"/>
     <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
     <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
     <arg name="imu_data_topic" value="$(arg imu_data_topic)"/>
     <arg name="imu_xyz" value="$(arg imu_xyz)"/>
     <arg name="imu_ypr" value="$(arg imu_ypr)"/>
@@ -75,6 +84,9 @@
     <arg name="origin_alt" value="$(arg origin_alt)"/>
     <arg name="yaw_enu_to_oxyz_deg" value="$(arg yaw_enu_to_oxyz_deg)"/>
     <arg name="can_iface" value="$(arg can_iface)"/>
+    <arg name="speed_sign" value="$(arg speed_sign)"/>
+    <arg name="steer_sign" value="$(arg steer_sign)"/>
+    <arg name="feedback_sign" value="$(arg feedback_sign)"/>
     <arg name="feedback_gear_ratio" value="$(arg motor_feedback_gear_ratio)"/>
     <!-- Exactly one localization source may own odometry and TF. -->
     <arg name="bridge_publish_odom"
@@ -105,6 +117,11 @@
     <arg name="max_speed" value="$(arg max_speed)"/>
     <arg name="require_localization_quality"
          value="$(eval localization_mode == 'lio_sam')"/>
+  </include>
+
+  <include if="$(arg load_vehicle_model)"
+           file="$(find vehicle_description)/launch/vehicle_visualization.launch">
+    <arg name="start_rviz" value="$(arg start_rviz)"/>
   </include>
 
   <include if="$(arg start_evaluator)"

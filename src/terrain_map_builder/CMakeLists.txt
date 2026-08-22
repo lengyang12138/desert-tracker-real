@@ -27,6 +27,7 @@ target_link_libraries(pcd_frame_transform ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 catkin_install_python(PROGRAMS
   scripts/check_mapping_bag.py
   scripts/align_qianxun_lio.py
+  scripts/calibrate_map_frame.py
   scripts/map_module.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

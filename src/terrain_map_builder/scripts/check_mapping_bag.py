@@ -13,6 +13,7 @@ FIELD_TYPES = {
     1: "INT8", 2: "UINT8", 3: "INT16", 4: "UINT16",
     5: "INT32", 6: "UINT32", 7: "FLOAT32", 8: "FLOAT64",
 }
+FUSION_LOCATION_TOPIC = "/fusion_location"
 
 
 def stamp_of(message, bag_stamp):
@@ -50,7 +51,6 @@ def main():
     parser.add_argument("bags", nargs="+", help="bag files recorded in one run")
     parser.add_argument("--points", default="/points_raw")
     parser.add_argument("--imu", default="/imu/data")
-    parser.add_argument("--qianxun", default="/bus/location")
     parser.add_argument("--rings", type=int, default=32)
     parser.add_argument("--max-start-offset", type=float, default=1.0)
     args = parser.parse_args()
@@ -58,19 +58,20 @@ def main():
     try:
         points = collect_topic(args.bags, args.points)
         imu = collect_topic(args.bags, args.imu)
-        qianxun = collect_topic(args.bags, args.qianxun)
+        qianxun = collect_topic(args.bags, FUSION_LOCATION_TOPIC)
     except (OSError, rosbag.bag.ROSBagException) as exc:
         print("ERROR: cannot read bag: {}".format(exc), file=sys.stderr)
         return 2
 
     missing = [name for name, rows in (
-        (args.points, points), (args.imu, imu), (args.qianxun, qianxun)) if not rows]
+        (args.points, points), (args.imu, imu),
+        (FUSION_LOCATION_TOPIC, qianxun)) if not rows]
     if missing:
         print("ERROR: missing topic(s): " + ", ".join(missing))
         return 3
 
     for name, rows in ((args.points, points), (args.imu, imu),
-                       (args.qianxun, qianxun)):
+                       (FUSION_LOCATION_TOPIC, qianxun)):
         non_monotonic = sum(b[0] <= a[0] for a, b in zip(rows, rows[1:]))
         print("{}: count={} start={:.6f} end={:.6f} rate={:.2f}Hz non_monotonic={}".format(
             name, len(rows), rows[0][0], rows[-1][0], frequency(rows), non_monotonic))
@@ -138,10 +139,10 @@ def main():
     print("Qianxun valid JSON samples: {}/{}".format(
         valid_location, min(500, len(qianxun))))
     if valid_location == 0:
-        print("ERROR: /bus/location has no valid UTM_x/UTM_y/Head state")
+        print("ERROR: /fusion_location has no valid UTM_x/UTM_y/Head state")
         return 11
 
-    print("PASS: bag satisfies the /points_raw + /imu/data + /bus/location mapping contract")
+    print("PASS: bag satisfies the /points_raw + /imu/data + /fusion_location mapping contract")
     return 0
 
 

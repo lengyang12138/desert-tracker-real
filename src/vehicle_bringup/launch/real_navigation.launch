@@ -1,0 +1,12 @@
+<launch>
+  <!-- Preferred real-vehicle navigation entry. Fixed values live in config/real_vehicle.launch. -->
+  <arg name="project_root" default="$(find vehicle_bringup)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="localization_mode" default="qianxun"/>
+  <include file="$(find vehicle_bringup)/config/real_vehicle.launch">
+    <arg name="workflow" value="navigation"/>
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module)"/>
+    <arg name="localization_mode" value="$(arg localization_mode)"/>
+  </include>
+</launch>

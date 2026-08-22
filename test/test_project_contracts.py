@@ -190,7 +190,7 @@ class ProjectContractTests(unittest.TestCase):
             "navigation", "vehicle_interface", "pointcloud_preprocess",
             "terrain_map_builder", "fixed_map_localization",
             "navigation_evaluation", "slam_evaluation",
-            "vehicle_bringup", "lio_sam",
+            "vehicle_bringup", "vehicle_description", "lio_sam",
         }
         actual_packages = set()
         for directory, _, files in os.walk(self._path("src")):
@@ -240,7 +240,7 @@ class ProjectContractTests(unittest.TestCase):
             evaluator = stream.read()
         self.assertNotIn("from gazebo_msgs", evaluator)
         self.assertNotIn("/gazebo/model_states", evaluator)
-        self.assertIn("/bus/location", evaluator)
+        self.assertIn("/fusion_location", evaluator)
 
     def test_real_evaluator_records_low_bandwidth_sensor_diagnostics(self):
         with open(self._path(
@@ -301,6 +301,24 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn('"/localization/quality_ok"', localizer)
         self.assertIn("last_trusted_match_time_", localizer)
 
+        # Fixed-map localization must cold-start from a fresh, healthy
+        # Qianxun absolute pose rather than assuming map origin.
+        self.assertIn('"/localization/qianxun_seed"', localizer)
+        self.assertIn("require_qianxun_initialization_", localizer)
+        self.assertIn("initial_pose_timeout_", localizer)
+        self.assertIn("initialPoseCallback", localizer)
+
+        with open(self._path(
+            "src", "vehicle_interface", "src", "vehicle_interface",
+            "real_interface_bridge.py"
+        ), encoding="utf-8") as stream:
+            interface_bridge = stream.read()
+        self.assertIn("PoseWithCovarianceStamped", interface_bridge)
+        self.assertIn('"/localization/qianxun_seed"', interface_bridge)
+        self.assertIn("seed_healthy = healthy and gnss_position_valid", interface_bridge)
+        self.assertIn("gga_quality == 4", interface_bridge)
+        self.assertIn('state.get("HeadAligned", state["Head"])', interface_bridge)
+
         with open(self._path(
             "src", "vehicle_interface", "src", "vehicle_interface",
             "can_bridge.py"
@@ -356,6 +374,39 @@ class ProjectContractTests(unittest.TestCase):
         replay_text = ET.tostring(replay, encoding="unicode")
         self.assertIn('name="publish_lidar_tf"', replay_text)
         self.assertIn("arg('bag_has_static_tf') != 'true'", replay_text)
+
+    def test_real_vehicle_entry_launches_hide_fixed_hardware_parameters(self):
+        config = ET.parse(self._path(
+            "src", "vehicle_bringup", "config", "real_vehicle.launch"
+        )).getroot()
+        config_args = {node.get("name"): node.get("default")
+                       for node in config.findall("arg")}
+        for required in (
+                "gnss_port", "imu_port", "imu_xyz", "imu_ypr",
+                "lidar_xyz", "lidar_ypr", "lever_x", "lever_y", "lever_z",
+                "can_iface", "speed_sign", "steer_sign", "feedback_sign"):
+            self.assertIn(required, config_args)
+
+        entries = {
+            "real_calibration.launch": set(),
+            "real_localization_check.launch": {"project_root", "map_module"},
+            "real_navigation.launch": {"project_root", "map_module",
+                                       "localization_mode"},
+            "real_navigation_only.launch": {"project_root", "map_module"},
+            "real_mapping.launch": {"project_root", "map_module"},
+            "real_mapping_record.launch": {"project_root", "map_module"},
+            "offline_mapping.launch": set(),
+        }
+        for filename, expected_args in entries.items():
+            root = ET.parse(self._path(
+                "src", "vehicle_bringup", "launch", filename
+            )).getroot()
+            actual_args = {node.get("name") for node in root.findall("arg")}
+            self.assertEqual(actual_args, expected_args)
+            text = ET.tostring(root, encoding="unicode")
+            self.assertIn("config/real_vehicle.launch", text)
+            for hidden in ("imu_xyz", "lidar_xyz", "gnss_port", "lever_x"):
+                self.assertNotIn('name="{}"'.format(hidden), text)
 
     def test_dynamic_tf_publishers_have_one_owner_in_each_runtime_mode(self):
         full = ET.parse(self._path(
@@ -416,7 +467,7 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn("point_cloud_received && imu_received", recorder)
         self.assertIn('"rosbag", "record", "--lz4"', recorder)
         self.assertIn(
-            'points_topic, imu_topic, "/bus/location", "/tf", "/tf_static"',
+            'points_topic, imu_topic, "/fusion_location", "/tf", "/tf_static"',
             recorder)
 
         replay = ET.parse(self._path(
@@ -563,8 +614,8 @@ class ProjectContractTests(unittest.TestCase):
         self.assertEqual(args["imu_pitch_sign"], "-1")
         self.assertEqual(args["imu_roll_zero_deg"], "3.6")
         self.assertEqual(args["imu_pitch_zero_deg"], "3.8")
-        self.assertEqual(args["lever_x"], "-0.08")
-        self.assertEqual(args["lever_z"], "-0.99")
+        self.assertEqual(args["lever_x"], "-0.114")
+        self.assertEqual(args["lever_z"], "-0.970")
 
     def test_qianxun_timing_faults_fail_closed(self):
         launch = ET.parse(self._path(

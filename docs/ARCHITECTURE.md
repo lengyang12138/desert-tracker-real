@@ -34,7 +34,7 @@ CK1/CK2 校验。AHRS/VRU 模式仍必须由现场人员按设备实际配置明
 | 方向 | 接口 | 数据约定 |
 |---|---|---|
 | YIS525 -> 融合/LIO-SAM | `/imu/data` | 驱动唯一发布；两个定位器接收同一消息与时间戳 |
-| 组合定位 -> 适配层 | ROS `/bus/location`，JSON | O-XYZ 坐标；航向从全局 `+Y` 起算、逆时针为正 |
+| 组合定位 -> 适配层 | ROS `/fusion_location`，JSON | O-XYZ 坐标；航向从全局 `+Y` 起算、逆时针为正 |
 | 适配层 -> 导航 | `/odometry/imu_incremental` | 与仿真一致；bridge不再发布IMU |
 | 定位适配层 -> MPC | `/vehicle/state` | 统一控制状态：`header.stamp`为真实测量时刻，`twist`固定在`base_link`；千寻/LIO-SAM仅一个发布者 |
 | 雷达 -> LIO-SAM | `/rslidar_points` -> `/points_raw` | 实车原始点云经转换后供建图及可选定位；PointCloud2，frame 为 `velodyne` |
@@ -135,8 +135,15 @@ roslaunch vehicle_bringup navigation.launch
 完整链路使用一行命令：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:=dune_a localization_mode:=qianxun
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=qianxun
 ```
+
+RViz默认随完整系统启动；无图形界面时在
+`src/vehicle_bringup/config/real_vehicle.launch`中关闭。
+`vehicle_description`仅把单链接`base_link`模型写入`robot_description`，车辆
+姿态完全来自当前定位模式已有的真实TF，不启动`robot_state_publisher`，也不
+建立仿真关节或额外TF。工具栏`2D Nav Goal`发布目标位置和箭头航向到
+`/move_base_simple/goal`。
 
 ## 7. 安全约束
 
@@ -176,20 +183,25 @@ IMU固定为`/imu/data`。默认 `localization_mode:=qianxun` 不启动 LIO-SAM�
 
 ```bash
 # 在线建图：启动IMU、千寻融合、雷达转换和LIO-SAM（CAN保持关闭）
-roslaunch vehicle_bringup mapping.launch map_module:="${MAP_MODULE}"
+roslaunch vehicle_bringup real_mapping.launch map_module:=site_a
 
 # 推荐：先录制可重复建图和坐标对齐的数据（CAN保持关闭）
-roslaunch vehicle_bringup record_mapping_bag.launch map_module:="${MAP_MODULE}"
+roslaunch vehicle_bringup real_mapping_record.launch map_module:=site_a
 
-# 录制内容必须包含 /points_raw /imu/data /bus/location /tf /tf_static
+# 录制内容必须包含 /points_raw /imu/data /fusion_location /tf /tf_static
 # 回放建图时不打开串口、雷达驱动或CAN
-roslaunch vehicle_bringup bag_mapping.launch
+roslaunch vehicle_bringup offline_mapping.launch
 rosbag play --clock "bags/${MAP_MODULE}"/mapping_run_*.bag
 
 # 建图前检查点云字段、IMU、千寻状态和共同时间范围
 rosrun terrain_map_builder check_mapping_bag.py "bags/${MAP_MODULE}"/mapping_run_*.bag
 
 # 正式地图应把固定 origin_lat/origin_lon 和坐标轴旋转角写入module.yaml
+
+# 两点法自动标定：A点为原点，A到B必须沿该地图O-XYZ的+X方向且不少于10m
+# 默认只显示结果；人工核对后再次执行并加--write才会修改module.yaml
+rosrun terrain_map_builder calibrate_map_frame.py "${MAP_MODULE}"
+rosrun terrain_map_builder calibrate_map_frame.py "${MAP_MODULE}" --write
 
 # 1. 保存 PCD 后关闭雷达和 LIO-SAM
 rosrun terrain_map_builder map_module.py save "${MAP_MODULE}" --resolution 0.2
@@ -235,7 +247,7 @@ RSHELIOS SDK必须以`POINT_TYPE=XYZIRT`编译，真实`ring/timestamp`由适配
 `odom -> base_link`：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:="${MAP_MODULE}" localization_mode:=qianxun
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=qianxun
 ```
 
 LIO-SAM 模式会自动关闭桥接节点的里程计和 TF 输出，避免双发布。LIO-SAM
@@ -243,7 +255,7 @@ LIO-SAM 模式会自动关闭桥接节点的里程计和 TF 输出，避免双�
 `map -> odom`：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:="${MAP_MODULE}" localization_mode:=lio_sam
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=lio_sam
 ```
 
 两种定位模式共用同一台 YIS525，但串口只能由
@@ -259,9 +271,13 @@ YIS525驱动是 `/imu/data` 的唯一发布者；千寻融合和LIO-SAM直接订
 ROS消息，bridge不再复制或重打时间戳。驱动启动后检查ROS master，发现第
 二个发布者就停止，避免同名消息交错进入预积分。
 
-固定地图定位器沿用仿真验证过的初始位姿假设：车辆应从建图坐标系已知的
-起始区域开始。若需要在地图任意位置冷启动，还要增加 GNSS 初值或全局重
-定位模块，不能只依靠局部 NDT。
+固定地图定位器订阅 `/localization/qianxun_seed`。桥接节点只在千寻融合、位置、
+控制点坐标和航向全部健康时发布该消息；其中坐标使用GNSS测量时刻的控制点，
+航向已经转换成ROS `map` 坐标系yaw。NDT收到不超过1秒的健康初值后才建立
+第一次 `map -> odom`，随后由LIO-SAM速度传播并由NDT修正，千寻不会持续覆盖
+激光定位结果。因此车辆可以从同一地图覆盖范围内的不同位置冷启动，但仍要求
+固定地图已正确对齐到该地图模块的千寻O-XYZ坐标。首次连续NDT匹配通过前，
+`/localization/quality_ok`保持为`false`，控制器禁止车辆行驶。
 
 ### 固定点云转换接口
 
@@ -272,7 +288,7 @@ RSHELIOS驱动固定发布XYZIRT格式 `/rslidar_points`；转换节点保留真
 ### 千寻与LIO-SAM地图对齐
 
 用于起终点导航的主流程采用“同步录包、离线建图、离线对齐”。同一bag中的
-`/bus/location`与`/lio_sam/mapping/odometry`按时间匹配，稳健拟合从LIO局部
+`/fusion_location`与`/lio_sam/mapping/odometry`按时间匹配，稳健拟合从LIO局部
 地图到千寻O-XYZ坐标系的SE(2)变换：
 
 ```bash
@@ -287,9 +303,9 @@ rosrun terrain_map_builder align_qianxun_lio.py "bags/${MAP_MODULE}"/mapping_run
 
 ## 9. 实车实验评估
 
-评估器默认随 `full_system.launch` 启动，监听 `/move_base/goal` 自动开始一
+评估器默认随 `real_navigation.launch` 启动，监听 `/move_base/goal` 自动开始一
 次实验，监听 `/move_base/status` 自动结束。仿真的
-`/gazebo/model_states` 已替换为实车 `/bus/location`；其余接口为：
+`/gazebo/model_states` 已替换为实车 `/fusion_location`；其余接口为：
 
 - `/hybrid_astar/plan` 及粗通道、走廊、Pareto 和规划统计；
 - 当前定位模式的位姿；
@@ -308,7 +324,7 @@ ${PROJECT_ROOT}/results/${MAP_MODULE}/lio_sam/nav_N/
 重新生成后与历史结果混淆。
 
 每次导航实验由评估器直接订阅低带宽传感器，不要求同时录制大bag：
-`/imu/data`逐样本保存，`/bus/location`保存千寻天线原始定位字段和融合状态，
+`/imu/data`逐样本保存，`/fusion_location`保存千寻天线原始定位字段和融合状态，
 `/motor_feedback`保存CAN原始左右`int16`及换算RPM，`/joint_states`用于履带
 运动学和滑移观察。结束时生成IMU、GPS和电机诊断图。激光点云不进入评估器；
 仅在建图、定位复现或故障排查需要完整点云时单独录制bag。

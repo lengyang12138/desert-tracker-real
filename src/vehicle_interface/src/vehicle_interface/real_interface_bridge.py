@@ -1,12 +1,13 @@
 """Bridge the proven plan_try state/CAN contract to standard ROS navigation.
 
 Input:
-  /bus/location (std_msgs/String JSON, O-XYZ convention)
+  /fusion_location (std_msgs/String JSON, O-XYZ convention)
   /cmd_vel       (geometry_msgs/Twist, ROS convention)
 
 Output:
   /odometry/imu_incremental and TF map->odom->base_link
   /vehicle/state (measurement-time, base_link-twist control state)
+  /localization/qianxun_seed (healthy absolute pose for NDT cold start)
   ZMQ PoliAcc/PoliSteer/PoliBrake for the existing SocketCAN bridge
 """
 
@@ -18,7 +19,7 @@ import time
 import rospy
 import tf2_ros
 import zmq
-from geometry_msgs.msg import TransformStamped, Twist
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped, Twist
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 
@@ -57,7 +58,7 @@ class RealInterfaceBridge:
         self.map_frame = rospy.get_param("~map_frame", "map")
         self.odom_frame = rospy.get_param("~odom_frame", "odom")
         self.base_frame = rospy.get_param("~base_frame", "base_link")
-        self.state_topic = rospy.get_param("~state_topic", "/bus/location")
+        self.state_topic = rospy.get_param("~state_topic", "/fusion_location")
         self.cmd_topic = rospy.get_param("~cmd_vel_topic", "/cmd_vel")
         self.odom_topic = rospy.get_param(
             "~odom_topic", "/odometry/imu_incremental"
@@ -65,9 +66,15 @@ class RealInterfaceBridge:
         self.vehicle_state_topic = rospy.get_param(
             "~vehicle_state_topic", "/vehicle/state"
         )
+        self.localization_seed_topic = rospy.get_param(
+            "~localization_seed_topic", "/localization/qianxun_seed"
+        )
         self.publish_odom = bool(rospy.get_param("~publish_odom", True))
         self.publish_vehicle_state = bool(
             rospy.get_param("~publish_vehicle_state", True)
+        )
+        self.publish_localization_seed = bool(
+            rospy.get_param("~publish_localization_seed", True)
         )
         self.publish_tf = bool(rospy.get_param("~publish_tf", True))
         self.publish_map_to_odom = bool(
@@ -111,6 +118,13 @@ class RealInterfaceBridge:
             self.vehicle_state_pub = rospy.Publisher(
                 self.vehicle_state_topic, Odometry, queue_size=50
             )
+        self.localization_seed_pub = None
+        if self.publish_localization_seed:
+            self.localization_seed_pub = rospy.Publisher(
+                self.localization_seed_topic,
+                PoseWithCovarianceStamped,
+                queue_size=10,
+            )
         self.tf_pub = tf2_ros.TransformBroadcaster()
         self.static_tf_pub = tf2_ros.StaticTransformBroadcaster()
 
@@ -149,9 +163,15 @@ class RealInterfaceBridge:
                 raise ValueError("non-finite heading")
             roll = math.radians(_finite_float(state.get("Roll", 0.0), 0.0))
             pitch = math.radians(_finite_float(state.get("Pitch", 0.0), 0.0))
+            gnss_position_valid = bool(
+                int(state.get("GNSSPositionValid", 0))
+            )
+            gga_quality = int(
+                state.get("GGA_quality", state.get("Status", 0))
+            )
             qx, qy, qz, qw = quaternion_from_rpy(roll, pitch, yaw)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            rospy.logwarn_throttle(1.0, "invalid /bus/location payload: %s", exc)
+            rospy.logwarn_throttle(1.0, "invalid /fusion_location payload: %s", exc)
             return
 
         stamp = rospy.Time.now()
@@ -161,6 +181,22 @@ class RealInterfaceBridge:
             self.require_position,
             self.require_control_frame,
             self.require_known_heading,
+        )
+        measurement_s = _finite_float(
+            state.get("GNSSMeasurementTimestamp", stamp.to_sec()),
+            stamp.to_sec(),
+        )
+        measurement_stamp = rospy.Time.from_sec(measurement_s)
+        measured_x = _finite_float(state.get("ControlFrameAlignedX", x), x)
+        measured_x += _finite_float(state.get("ControlFrameDx", 0.0), 0.0)
+        measured_y = _finite_float(state.get("ControlFrameAlignedY", y), y)
+        measured_y += _finite_float(state.get("ControlFrameDy", 0.0), 0.0)
+        measured_z = _finite_float(state.get("ControlFrameAlignedZ", z), z)
+        measured_yaw = oxyz_heading_to_ros_yaw(
+            state.get("HeadAligned", state["Head"])
+        )
+        mqx, mqy, mqz, mqw = quaternion_from_rpy(
+            roll, pitch, measured_yaw
         )
         with self.lock:
             self.state = state
@@ -188,36 +224,39 @@ class RealInterfaceBridge:
         if self.odom_pub is not None:
             self.odom_pub.publish(odom)
 
+        # The fixed-map localizer consumes this only once at cold start.  Do
+        # not publish an invalid/high-covariance seed: absence keeps its
+        # localization quality gate closed instead of guessing map origin.
+        seed_healthy = healthy and gnss_position_valid and gga_quality == 4
+        if seed_healthy and self.localization_seed_pub is not None:
+            seed = PoseWithCovarianceStamped()
+            seed.header.stamp = measurement_stamp
+            seed.header.frame_id = self.map_frame
+            seed.pose.pose.position.x = measured_x
+            seed.pose.pose.position.y = measured_y
+            seed.pose.pose.position.z = measured_z
+            seed.pose.pose.orientation.x = mqx
+            seed.pose.pose.orientation.y = mqy
+            seed.pose.pose.orientation.z = mqz
+            seed.pose.pose.orientation.w = mqw
+            seed.pose.covariance[0] = covariance
+            seed.pose.covariance[7] = covariance
+            seed.pose.covariance[35] = covariance
+            self.localization_seed_pub.publish(seed)
+
         # Unified controller-state contract.  Unlike the compatibility odom
         # above (whose pose is propagated to publication time), this message
         # represents the GNSS/IMU-aligned measurement instant.  Its twist is
         # always expressed in child_frame_id=base_link as required by
         # nav_msgs/Odometry and by both localization adapters.
         if self.vehicle_state_pub is not None:
-            measurement_s = _finite_float(
-                state.get("GNSSMeasurementTimestamp", stamp.to_sec()),
-                stamp.to_sec(),
-            )
-            measurement_stamp = rospy.Time.from_sec(measurement_s)
-            measured_yaw = oxyz_heading_to_ros_yaw(
-                state.get("HeadAligned", state["Head"])
-            )
-            mqx, mqy, mqz, mqw = quaternion_from_rpy(
-                roll, pitch, measured_yaw
-            )
             vehicle_state = Odometry()
             vehicle_state.header.stamp = measurement_stamp
             vehicle_state.header.frame_id = self.odom_frame
             vehicle_state.child_frame_id = self.base_frame
-            vehicle_state.pose.pose.position.x = _finite_float(
-                state.get("ControlFrameAlignedX", x), x
-            ) + _finite_float(state.get("ControlFrameDx", 0.0), 0.0)
-            vehicle_state.pose.pose.position.y = _finite_float(
-                state.get("ControlFrameAlignedY", y), y
-            ) + _finite_float(state.get("ControlFrameDy", 0.0), 0.0)
-            vehicle_state.pose.pose.position.z = _finite_float(
-                state.get("ControlFrameAlignedZ", z), z
-            )
+            vehicle_state.pose.pose.position.x = measured_x
+            vehicle_state.pose.pose.position.y = measured_y
+            vehicle_state.pose.pose.position.z = measured_z
             vehicle_state.pose.pose.orientation.x = mqx
             vehicle_state.pose.pose.orientation.y = mqy
             vehicle_state.pose.pose.orientation.z = mqz

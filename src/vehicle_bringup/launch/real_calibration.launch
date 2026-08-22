@@ -1,0 +1,6 @@
+<launch>
+  <!-- Sensor-only calibration. Fixed devices/extrinsics live in config/real_vehicle.launch. -->
+  <include file="$(find vehicle_bringup)/config/real_vehicle.launch">
+    <arg name="workflow" value="calibration"/>
+  </include>
+</launch>

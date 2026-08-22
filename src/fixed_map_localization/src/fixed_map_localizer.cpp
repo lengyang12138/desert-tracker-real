@@ -7,6 +7,7 @@
 
 #include <Eigen/Geometry>
 #include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <pcl/common/transforms.h>
 #include <pcl/filters/voxel_grid.h>
@@ -105,6 +106,8 @@ public:
     pnh_.param<std::string>("scan_topic", scan_topic_, "/lio_sam/deskew/cloud_deskewed");
     pnh_.param<std::string>("motion_odom_topic", motion_odom_topic_,
                             "/odometry/imu_incremental");
+    pnh_.param<std::string>("initial_pose_topic", initial_pose_topic_,
+                            "/localization/qianxun_seed");
     pnh_.param<std::string>("map_frame", map_frame_, "map");
     pnh_.param<std::string>("odom_frame", odom_frame_, "odom");
     pnh_.param<std::string>("base_frame", base_frame_, "base_link");
@@ -140,7 +143,13 @@ public:
     pnh_.param<std::string>("quality_topic", quality_topic_,
                             "/localization/quality_ok");
     pnh_.param<double>("quality_timeout", quality_timeout_, 1.0);
+    pnh_.param<bool>("require_qianxun_initialization",
+                     require_qianxun_initialization_, true);
+    pnh_.param<double>("initial_pose_timeout", initial_pose_timeout_, 1.0);
+    pnh_.param<double>("max_initial_pose_covariance",
+                       max_initial_pose_covariance_, 1.0);
     quality_timeout_ = std::max(0.1, quality_timeout_);
+    initial_pose_timeout_ = std::max(0.1, initial_pose_timeout_);
 
     if (map_file_.empty())
       throw std::runtime_error("~map_file is required");
@@ -165,6 +174,9 @@ public:
     motion_odom_sub_ = nh_.subscribe(
         motion_odom_topic_, 2000, &FixedMapLocalizer::motionOdometryCallback,
         this, ros::TransportHints().tcpNoDelay());
+    initial_pose_sub_ = nh_.subscribe(
+        initial_pose_topic_, 5, &FixedMapLocalizer::initialPoseCallback, this,
+        ros::TransportHints().tcpNoDelay());
     odom_pub_ = pnh_.advertise<nav_msgs::Odometry>("odometry", 5);
     target_odom_pub_ = pnh_.advertise<nav_msgs::Odometry>("target_odometry", 5);
     local_map_pub_ = pnh_.advertise<sensor_msgs::PointCloud2>("local_map", 1, true);
@@ -174,7 +186,9 @@ public:
         &FixedMapLocalizer::tfTimerCallback, this);
 
     ROS_INFO_STREAM("Fixed-map localizer ready: " << map_ds_->size() << " map points, scan="
-                    << scan_topic_ << ", map=" << map_file_);
+                    << scan_topic_ << ", map=" << map_file_
+                    << ", initial_pose=" << initial_pose_topic_
+                    << ", require_qianxun=" << require_qianxun_initialization_);
   }
 
 private:
@@ -196,21 +210,86 @@ private:
     }
   }
 
+  void initialPoseCallback(
+      const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msg)
+  {
+    if (msg->header.frame_id != map_frame_)
+    {
+      ROS_WARN_THROTTLE(2.0, "Qianxun seed rejected: frame '%s' is not '%s'",
+                        msg->header.frame_id.c_str(), map_frame_.c_str());
+      return;
+    }
+    const auto& p = msg->pose.pose.position;
+    const auto& q = msg->pose.pose.orientation;
+    const double q_norm = std::sqrt(q.x * q.x + q.y * q.y +
+                                    q.z * q.z + q.w * q.w);
+    const double covariance_xy = std::max(msg->pose.covariance[0],
+                                          msg->pose.covariance[7]);
+    const double covariance_yaw = msg->pose.covariance[35];
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) ||
+        !std::isfinite(q_norm) || q_norm < 1e-6 ||
+        !std::isfinite(covariance_xy) || !std::isfinite(covariance_yaw) ||
+        covariance_xy < 0.0 || covariance_yaw < 0.0 ||
+        covariance_xy > max_initial_pose_covariance_ ||
+        covariance_yaw > max_initial_pose_covariance_)
+    {
+      ROS_WARN_THROTTLE(2.0, "Qianxun seed rejected: invalid pose or covariance");
+      return;
+    }
+
+    const double yaw = std::atan2(
+        2.0 * (q.w * q.z + q.x * q.y),
+        1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+    std::lock_guard<std::mutex> lock(initial_pose_mutex_);
+    initial_map_to_base_ = makeSe2(p.x, p.y, yaw);
+    initial_pose_received_time_ = ros::Time::now();
+    initial_pose_available_ = true;
+  }
+
+  bool initialPoseSnapshot(const ros::Time& now, Eigen::Matrix4f& pose)
+  {
+    std::lock_guard<std::mutex> lock(initial_pose_mutex_);
+    if (!initial_pose_available_ ||
+        (now - initial_pose_received_time_).toSec() > initial_pose_timeout_)
+      return false;
+    pose = initial_map_to_base_;
+    return true;
+  }
+
   bool initializeState(const Eigen::Matrix4f& odom_to_base,
                        const ros::Time& stamp)
   {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      if (state_initialized_)
+        return false;
+    }
+
+    Eigen::Matrix4f initial_pose;
+    const bool have_initial_pose = initialPoseSnapshot(ros::Time::now(), initial_pose);
+    if (require_qianxun_initialization_ && !have_initial_pose)
+    {
+      ROS_WARN_THROTTLE(2.0, "Fixed-map localization waiting for a healthy Qianxun seed");
+      return false;
+    }
+
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (state_initialized_)
       return false;
 
-    // The saved base-aligned map and odom both start at the vehicle's initial
-    // pose. From this point on, pose propagation uses velocity only; the
-    // discontinuous position field of LIO-SAM odometry is deliberately not
-    // integrated into the navigation pose.
-    map_to_base_ = makeSe2(odom_to_base(0, 3), odom_to_base(1, 3),
-                           yawOf(odom_to_base));
+    // Qianxun supplies the absolute map pose once. From this point on, pose
+    // propagation uses LIO velocity and NDT corrections; GNSS does not
+    // continuously overwrite the independent fixed-map localization result.
+    map_to_base_ = have_initial_pose
+                       ? initial_pose
+                       : makeSe2(odom_to_base(0, 3), odom_to_base(1, 3),
+                                 yawOf(odom_to_base));
     last_motion_stamp_ = stamp;
     state_initialized_ = true;
+    ROS_INFO("Fixed-map localization initialized from %s at x=%.3f y=%.3f yaw=%.2fdeg",
+             have_initial_pose ? "Qianxun" : "local odometry",
+             map_to_base_(0, 3), map_to_base_(1, 3),
+             yawOf(map_to_base_) * 180.0 / M_PI);
     return true;
   }
 
@@ -524,6 +603,7 @@ private:
   ros::NodeHandle pnh_;
   ros::Subscriber scan_sub_;
   ros::Subscriber motion_odom_sub_;
+  ros::Subscriber initial_pose_sub_;
   ros::Publisher odom_pub_;
   ros::Publisher target_odom_pub_;
   ros::Publisher local_map_pub_;
@@ -536,6 +616,7 @@ private:
   std::string map_file_;
   std::string scan_topic_;
   std::string motion_odom_topic_;
+  std::string initial_pose_topic_;
   std::string map_frame_;
   std::string odom_frame_;
   std::string base_frame_;
@@ -568,6 +649,9 @@ private:
   int minimum_scan_points_;
   int minimum_map_points_;
   double quality_timeout_;
+  bool require_qianxun_initialization_;
+  double initial_pose_timeout_;
+  double max_initial_pose_covariance_;
   int scan_count_ = 0;
   int consecutive_matches_ = 0;
   int consecutive_rejections_ = 0;
@@ -584,6 +668,10 @@ private:
   double filtered_yaw_rate_ = 0.0;
   bool state_initialized_ = false;
   std::mutex state_mutex_;
+  Eigen::Matrix4f initial_map_to_base_ = Eigen::Matrix4f::Identity();
+  ros::Time initial_pose_received_time_;
+  bool initial_pose_available_ = false;
+  std::mutex initial_pose_mutex_;
   ros::Time last_trusted_match_time_;
   std::mutex quality_mutex_;
 };

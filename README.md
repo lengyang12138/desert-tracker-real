@@ -139,14 +139,13 @@ LIO-SAM save_map -> raw/GlobalMap.pcd
 完成串口、雷达模式和初始外参配置后：
 
 ```bash
-MAP_MODULE="site_a"
-roslaunch vehicle_bringup mapping.launch map_module:="${MAP_MODULE}"
+roslaunch vehicle_bringup real_mapping.launch map_module:=site_a
 ```
 
 需要保留可复现数据时，统一录制处理后点云、共享 IMU、千寻状态和 TF：
 
 ```bash
-roslaunch vehicle_bringup record_mapping_bag.launch map_module:="${MAP_MODULE}"
+roslaunch vehicle_bringup real_mapping_record.launch map_module:=site_a
 ```
 
 录包节点等待 `/points_raw` 和 `/imu/data` 都有新鲜数据后才启动 rosbag，记录：
@@ -154,7 +153,7 @@ roslaunch vehicle_bringup record_mapping_bag.launch map_module:="${MAP_MODULE}"
 ```text
 /points_raw
 /imu/data
-/bus/location
+/fusion_location
 /tf
 /tf_static
 ```
@@ -168,14 +167,8 @@ roslaunch vehicle_bringup record_mapping_bag.launch map_module:="${MAP_MODULE}"
 rosrun terrain_map_builder check_mapping_bag.py \
   "bags/${MAP_MODULE}"/mapping_run_*.bag
 
-roslaunch vehicle_bringup bag_mapping.launch
+roslaunch vehicle_bringup offline_mapping.launch
 rosbag play --clock "bags/${MAP_MODULE}"/mapping_run_*.bag
-```
-
-由本项目录制的 bag 包含 `/tf_static`。回放不包含静态 TF 的旧包时使用：
-
-```bash
-roslaunch vehicle_bringup bag_mapping.launch bag_has_static_tf:=false
 ```
 
 ### 保存、对齐和生成规划地图
@@ -211,7 +204,8 @@ LIO-SAM -> GlobalMap.pcd 或定位里程计
 RSHELIOS 使用 `use_lidar_clock: false`，点云帧时间来自工控机系统时钟，点内
 `time` 仅保留扫描内相对时间。YIS525 在同一工控机上使用 ROS 系统时间戳。
 
-安装外参通过启动参数传入：
+固定实车参数统一填写在 `src/vehicle_bringup/config/real_vehicle.launch`，
+日常启动命令不再传入外参、串口、杆臂或车辆标定量：
 
 - `lidar_xyz`、`lidar_ypr`：`base_link -> velodyne`；
 - `imu_xyz`、`imu_ypr`：`base_link -> imu_link`；
@@ -256,18 +250,28 @@ sudo ip link set can0 up type can bitrate 500000
 千寻定位模式：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch \
-  map_module:=site_a \
-  localization_mode:=qianxun
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=qianxun
 ```
 
 LIO-SAM 固定地图定位模式：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch \
-  map_module:=site_a \
-  localization_mode:=lio_sam
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=lio_sam
 ```
+
+该模式使用健康的千寻控制点位置和航向发布
+`/localization/qianxun_seed`，为固定地图NDT提供一次性全局初值。因此车辆不再
+要求停回建图起点，但必须位于当前地图覆盖范围内，并等待千寻有效和连续NDT
+匹配使`/localization/quality_ok`变为`true`后才能下发运动控制。启动检查：
+
+```bash
+rostopic echo -n 1 /localization/qianxun_seed
+```
+
+`real_navigation.launch`默认加载只含`base_link`的实车可视化模型并自动打开RViz，
+使用真实`map -> odom -> base_link` TF实时显示车辆、地图、终点位置与航向、
+Hybrid A*全局路径和MPC预测路径。可视化包不发布任何TF，也不包含Gazebo插件、
+仿真关节或碰撞模型。是否启动RViz在统一实车配置文件中设置。
 
 默认实车最高速度为 `0.15 m/s`。正式启动前应完成：
 
@@ -304,7 +308,7 @@ rosrun terrain_map_builder align_qianxun_lio.py \
 
 ## 实车评估
 
-`full_system.launch` 默认启动评估器。每次 `/move_base/goal` 都会创建独立目录：
+`real_navigation.launch` 默认启动评估器。每次 `/move_base/goal` 都会创建独立目录：
 
 ```text
 results/${MAP_MODULE}/qianxun/nav_N/

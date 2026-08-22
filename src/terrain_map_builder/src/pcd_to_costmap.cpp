@@ -687,7 +687,7 @@ int main(int argc, char** argv)
     nh.param("smooth_kernel",       smooth_kernel, 2);
 
     nh.param("friction_coeff",      friction_coeff, 0.4);
-    nh.param("vehicle_track_width", vehicle_track_width, 1.277);
+    nh.param("vehicle_track_width", vehicle_track_width, 1.000);
     nh.param("vehicle_cg_height",   vehicle_cg_height, 0.5);
     nh.param("weight_climb",        weight_climb, 0.4);
     nh.param("weight_rollover",     weight_rollover, 0.3);

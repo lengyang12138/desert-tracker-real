@@ -7,12 +7,12 @@
 #    - 履带差速运动学约束 + Dubins 曲线解析展开
 # ============================================================
 #
-#  车辆参数 (来自 car_base.urdf.xacro):
-#    车体尺寸:   1.70m × 0.97m × 2.17m
-#    履带中心距:  1.28m (左轮 y=0.631, 右轮 y=-0.645)
+#  实车测量参数:
+#    整车外轮廓: 2.00m × 1.20m
+#    履带接地长: 1.57m；两侧履带中心距: 1.00m
 #    轮径:       0.363m
 #    整车质量:   1300 kg
-#    footprint:  [-0.85,±0.64] → inscribed_radius = 0.64m
+#    footprint:  [-1.00,±0.60] → inscribed_radius = 0.60m
 # ============================================================
 
 HybridAStarPlanner:
@@ -84,9 +84,9 @@ HybridAStarPlanner:
   # of a 0.6m primitive), enough to break rough-path ties without dominating
   # length/risk or recreating the long-distance search failure.
   fine_curvature_change_weight: 0.4
-  # 硬障碍到车辆中心的最小规划距离。矩形车体外接半径约1.06m；
-  # 1.35m额外保留约0.29m，用于覆盖定位/跟踪误差且不改变地形风险软代价。
-  min_clearance: 1.35
+  # 硬障碍到车辆中心的最小规划距离。矩形车体外接半径约1.166m；
+  # 1.67m保证障碍物到车体外接圆边缘的净距不小于0.50m。
+  min_clearance: 1.67
 
   # ===== 沙地通行代价 (TCM1 格式) =====
   terrain_cost_file: ""

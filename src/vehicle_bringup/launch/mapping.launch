@@ -5,6 +5,10 @@
   <arg name="map_module_dir"
        default="$(eval arg('map_module') if len(arg('map_module')) > 0 and arg('map_module')[0].isalnum() and arg('map_module').replace('_','').replace('-','').isalnum() else 'INVALID_MAP_MODULE')"/>
   <arg name="map_config_file" default="$(arg project_root)/maps/$(arg map_module_dir)/module.yaml"/>
+  <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="gnss_baud" default="115200"/>
+  <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <arg name="imu_baud" default="460800"/>
   <arg name="lidar_xyz" default="0 0 0"/>
   <arg name="lidar_ypr" default="0 0 0"/>
   <arg name="imu_xyz" default="0 0 0"/>
@@ -13,6 +17,10 @@
   <include file="$(find vehicle_interface)/launch/io.launch">
     <arg name="use_map_config" value="true"/>
     <arg name="map_config_file" value="$(arg map_config_file)"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
     <arg name="start_can" value="false"/>
     <arg name="bridge_publish_odom" value="false"/>
     <arg name="bridge_publish_tf" value="false"/>

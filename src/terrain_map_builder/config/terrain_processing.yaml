@@ -23,7 +23,7 @@ fill_min_neighbors: 6
 fill_max_height_range: 0.8
 smooth_kernel: 3
 friction_coeff: 0.4
-vehicle_track_width: 1.277
+vehicle_track_width: 1.000
 vehicle_cg_height: 0.5
 weight_climb: 0.4
 weight_rollover: 0.3

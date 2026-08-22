@@ -47,7 +47,7 @@ Create and switch modules with:
 rosrun terrain_map_builder map_module.py create dune_a --origin-lat 22.0 --origin-lon 114.0 --origin-alt 0.0 --yaw-enu-to-oxyz-deg 0.0
 rosrun terrain_map_builder map_module.py list
 rosrun terrain_map_builder map_module.py validate dune_a --stage qianxun
-roslaunch vehicle_bringup full_system.launch map_module:=dune_a localization_mode:=qianxun
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=qianxun
 ```
 
 Mapping bags are isolated under `bags/<map_module>/`. Navigation results are

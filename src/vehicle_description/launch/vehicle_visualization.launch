@@ -1,0 +1,13 @@
+<launch>
+  <arg name="start_rviz" default="true"/>
+  <arg name="rviz_config"
+       default="$(find vehicle_description)/rviz/real_navigation.rviz"/>
+
+  <!-- Loading the one-link URDF is sufficient: RViz places base_link using
+       the existing real-vehicle TF.  No robot_state_publisher is needed. -->
+  <param name="robot_description"
+         textfile="$(find vehicle_description)/urdf/base_link_visual.urdf"/>
+
+  <node if="$(arg start_rviz)" pkg="rviz" type="rviz" name="navigation_rviz"
+        args="-d $(arg rviz_config)" output="screen"/>
+</launch>

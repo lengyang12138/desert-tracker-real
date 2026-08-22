@@ -279,7 +279,7 @@ void HybridAStarPlanner::initialize(std::string name,
   nh.param("curvature_penalty",       curvature_penalty_,        1.5);
   nh.param("fine_curvature_change_weight",
            fine_curvature_change_weight_, curvature_penalty_);
-  nh.param("min_clearance",            min_clearance_,            0.8);
+  nh.param("min_clearance",            min_clearance_,            1.67);
 
   nh.param<std::string>("terrain_cost_file",        terrain_cost_file_,        "");
   nh.param<std::string>("terrain_cost_coarse_file", terrain_cost_coarse_file_, "");
@@ -2327,7 +2327,7 @@ bool HybridAStarPlanner::isPathCollisionFree(double x0, double y0,
   for (int i = 0; i <= steps; ++i) {
     double t = (double)i / steps;
     // A centre-line that merely avoids lethal cells is not safe for the
-    // 1.70 m x 1.28 m tracked vehicle.  Use the same inflated-clearance and
+    // 2.00 m x 1.20 m tracked vehicle.  Use the same inflated-clearance and
     // active-corridor constraints as motion-primitive expansion, otherwise a
     // terminal/analytic connector can undo the safety guaranteed by search.
     if (!isTraversable(x0 + t*dx, y0 + t*dy)) return false;

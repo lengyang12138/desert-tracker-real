@@ -7,7 +7,7 @@
   <arg name="map_dir" default="$(arg project_root)/maps/$(arg map_module_dir)/planner"/>
   <arg name="output_dir"
        default="$(arg project_root)/results/$(arg map_module_dir)/$(arg localization_mode)"/>
-  <arg name="reference_state_topic" default="/bus/location"/>
+  <arg name="reference_state_topic" default="/fusion_location"/>
   <arg name="vehicle_sensor_topic" default="/bus/sensor"/>
   <arg name="imu_topic" default="/imu/data"/>
   <arg name="motor_feedback_topic" default="/motor_feedback"/>

@@ -26,9 +26,9 @@
   <arg name="imu_roll_zero_deg" default="3.6"/>
   <arg name="imu_pitch_zero_deg" default="3.8"/>
   <arg name="imu_gyro_z_bias_dps" default="0"/>
-  <arg name="lever_x" default="-0.08"/>
-  <arg name="lever_y" default="0"/>
-  <arg name="lever_z" default="-0.99"/>
+  <arg name="lever_x" default="-0.114"/>
+  <arg name="lever_y" default="0.004"/>
+  <arg name="lever_z" default="-0.970"/>
   <arg name="origin_lat" default=""/>
   <arg name="origin_lon" default=""/>
   <arg name="origin_alt" default="0"/>
@@ -41,6 +41,7 @@
   <arg name="feedback_gear_ratio" default="1.0"/>
   <arg name="bridge_publish_odom" default="true"/>
   <arg name="bridge_publish_vehicle_state" default="true"/>
+  <arg name="bridge_publish_localization_seed" default="true"/>
   <arg name="bridge_publish_tf" default="true"/>
   <arg name="bridge_publish_map_to_odom" default="true"/>
 
@@ -100,6 +101,8 @@
     <param name="publish_odom" value="$(arg bridge_publish_odom)"/>
     <param name="publish_vehicle_state"
            value="$(arg bridge_publish_vehicle_state)"/>
+    <param name="publish_localization_seed"
+           value="$(arg bridge_publish_localization_seed)"/>
     <param name="publish_tf" value="$(arg bridge_publish_tf)"/>
     <param name="publish_map_to_odom_identity"
            value="$(arg bridge_publish_map_to_odom)"/>

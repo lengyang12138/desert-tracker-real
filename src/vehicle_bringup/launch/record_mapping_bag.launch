@@ -11,7 +11,9 @@
   <arg name="map_config_file" default="$(arg project_root)/maps/$(arg map_module_dir)/module.yaml"/>
   <arg name="output_prefix" default="$(arg project_root)/bags/$(arg map_module_dir)/mapping_run"/>
   <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="gnss_baud" default="115200"/>
   <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <arg name="imu_baud" default="460800"/>
   <arg name="origin_lat" default=""/>
   <arg name="origin_lon" default=""/>
   <arg name="origin_alt" default="0"/>
@@ -27,7 +29,9 @@
     <arg name="use_map_config" value="true"/>
     <arg name="map_config_file" value="$(arg map_config_file)"/>
     <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
     <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
     <arg name="origin_lat" value="$(arg origin_lat)"/>
     <arg name="origin_lon" value="$(arg origin_lon)"/>
     <arg name="origin_alt" value="$(arg origin_alt)"/>

@@ -1,0 +1,10 @@
+<launch>
+  <!-- Planning/control staged check; start localization separately and keep CAN isolated. -->
+  <arg name="project_root" default="$(find vehicle_bringup)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <include file="$(find vehicle_bringup)/config/real_vehicle.launch">
+    <arg name="workflow" value="navigation_only"/>
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module)"/>
+  </include>
+</launch>

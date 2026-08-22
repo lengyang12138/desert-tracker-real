@@ -5,7 +5,7 @@ This node is a temporary replacement for POS_MPC_xiepo.py while the CHCNAV
 INS is unavailable. It reads Qianxun NMEA RMC sentences from a serial port and
 publishes the same downstream interface as the slope POS node:
 
-    ZMQ CurGNSS, ROS /bus/location, ROS /bus/pose, ROS /bus/sensor
+    ZMQ CurGNSS, ROS /fusion_location, ROS /bus/pose, ROS /bus/sensor
 
 Pure GNSS has no altitude, roll, pitch, or gyro. Those fields are explicitly
 filled with zero so path_plan_MPC_qianxun.py and control_MPC_qianxun.py can keep
@@ -1113,7 +1113,7 @@ def main():
     global _last_gga, _start_ref
     rospy.init_node("POS_qianxun", anonymous=True)
     pub_ros_pose = rospy.Publisher("/bus/pose", geometry_msgs.msg.Pose2D, queue_size=10)
-    pub_ros_location = rospy.Publisher("/bus/location", std_msgs.msg.String, queue_size=10)
+    pub_ros_location = rospy.Publisher("/fusion_location", std_msgs.msg.String, queue_size=10)
     pub_ros_sensor = rospy.Publisher("/bus/sensor", std_msgs.msg.String, queue_size=10)
 
     ctx = proContext()

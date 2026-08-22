@@ -1,0 +1,209 @@
+<launch>
+  <!--
+    Real-vehicle hardware configuration.
+
+    Edit this file after measuring the installed sensors.  Normal operation
+    must use the small entry launch files in vehicle_bringup/launch; do not
+    repeat these fixed values on the roslaunch command line.
+
+    Transform convention:
+      *_xyz = x y z in metres
+      *_ypr = yaw pitch roll in radians
+      parent frame is base_link
+  -->
+  <arg name="workflow"/>
+  <arg name="project_root" default="$(find vehicle_bringup)/../.."/>
+  <arg name="map_module" default="site_a"/>
+  <arg name="localization_mode" default="qianxun"/>
+
+  <!-- Serial devices: prefer stable /dev/serial/by-id/... names on vehicle. -->
+  <arg name="gnss_port" default="/dev/ttyUSB0"/>
+  <arg name="gnss_baud" default="115200"/>
+  <arg name="imu_port" default="/dev/ttyUSB1"/>
+  <arg name="imu_baud" default="460800"/>
+  <arg name="imu_data_topic" default="/imu/data"/>
+
+  <!-- Measured base_link -> sensor transforms. -->
+  <arg name="imu_xyz" default="-0.355 0.210 0.8925"/>
+  <arg name="imu_ypr" default="0 0 0"/>
+  <arg name="lidar_xyz" default="-0.730 -0.004 0.9505"/>
+  <arg name="lidar_ypr" default="0 0 0"/>
+
+  <!-- GNSS ARP to base_link control point, expressed in base_link. -->
+  <arg name="lever_x" default="-0.114"/>
+  <arg name="lever_y" default="0.004"/>
+  <arg name="lever_z" default="-0.970"/>
+
+  <!-- IMU installation/sign calibration and measurement-time alignment. -->
+  <arg name="imu_time_offset_s" default="0.0"/>
+  <arg name="imu_alignment_max_error_s" default="0.06"/>
+  <arg name="gnss_clock_max_residual_s" default="0.30"/>
+  <arg name="imu_heading_mode" default="AHRS"/>
+  <arg name="imu_yaw_sign" default="1"/>
+  <arg name="imu_true_north_offset_deg" default="181.6"/>
+  <arg name="imu_mount_yaw_deg" default="0"/>
+  <arg name="imu_roll_sign" default="1"/>
+  <arg name="imu_pitch_sign" default="-1"/>
+  <arg name="imu_gyro_z_sign" default="1"/>
+  <arg name="imu_roll_zero_deg" default="3.6"/>
+  <arg name="imu_pitch_zero_deg" default="3.8"/>
+  <arg name="imu_gyro_z_bias_dps" default="0"/>
+
+  <!-- Vehicle/CAN calibration. -->
+  <arg name="can_iface" default="can0"/>
+  <arg name="speed_sign" default="-1"/>
+  <arg name="steer_sign" default="1"/>
+  <arg name="feedback_sign" default="-1"/>
+  <arg name="motor_feedback_gear_ratio" default="1.0"/>
+
+  <!-- Conservative first-test limits and UI choices. -->
+  <arg name="max_speed" default="0.15"/>
+  <arg name="max_yaw_rate" default="0.35"/>
+  <arg name="start_evaluator" default="true"/>
+  <arg name="load_vehicle_model" default="true"/>
+  <arg name="start_rviz" default="true"/>
+  <arg name="mapping_warmup_seconds" default="3.0"/>
+  <arg name="mapping_topic_timeout_seconds" default="5.0"/>
+
+  <!-- Sensor-only calibration entry; it never opens CAN or publishes control TF. -->
+  <include if="$(eval arg('workflow') == 'calibration')"
+           file="$(find vehicle_interface)/launch/io.launch">
+    <arg name="use_map_config" value="false"/>
+    <arg name="start_can" value="false"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
+    <arg name="imu_data_topic" value="$(arg imu_data_topic)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="bridge_publish_odom" value="false"/>
+    <arg name="bridge_publish_vehicle_state" value="false"/>
+    <arg name="bridge_publish_tf" value="false"/>
+    <arg name="bridge_publish_map_to_odom" value="false"/>
+  </include>
+
+  <!-- Localization-only staged check; map origin comes from module.yaml. -->
+  <include if="$(eval arg('workflow') == 'localization_check')"
+           file="$(find vehicle_interface)/launch/io.launch">
+    <arg name="use_map_config" value="true"/>
+    <arg name="map_config_file" value="$(arg project_root)/maps/$(arg map_module)/module.yaml"/>
+    <arg name="start_can" value="false"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
+    <arg name="imu_data_topic" value="$(arg imu_data_topic)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="imu_alignment_max_error_s" value="$(arg imu_alignment_max_error_s)"/>
+    <arg name="gnss_clock_max_residual_s" value="$(arg gnss_clock_max_residual_s)"/>
+    <arg name="imu_heading_mode" value="$(arg imu_heading_mode)"/>
+    <arg name="imu_yaw_sign" value="$(arg imu_yaw_sign)"/>
+    <arg name="imu_true_north_offset_deg" value="$(arg imu_true_north_offset_deg)"/>
+    <arg name="imu_mount_yaw_deg" value="$(arg imu_mount_yaw_deg)"/>
+    <arg name="imu_roll_sign" value="$(arg imu_roll_sign)"/>
+    <arg name="imu_pitch_sign" value="$(arg imu_pitch_sign)"/>
+    <arg name="imu_gyro_z_sign" value="$(arg imu_gyro_z_sign)"/>
+    <arg name="imu_roll_zero_deg" value="$(arg imu_roll_zero_deg)"/>
+    <arg name="imu_pitch_zero_deg" value="$(arg imu_pitch_zero_deg)"/>
+    <arg name="imu_gyro_z_bias_dps" value="$(arg imu_gyro_z_bias_dps)"/>
+    <arg name="lever_x" value="$(arg lever_x)"/>
+    <arg name="lever_y" value="$(arg lever_y)"/>
+    <arg name="lever_z" value="$(arg lever_z)"/>
+  </include>
+
+  <!-- Planning/control staged check, used only when localization is already running. -->
+  <include if="$(eval arg('workflow') == 'navigation_only')"
+           file="$(find vehicle_bringup)/launch/navigation.launch">
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module)"/>
+    <arg name="max_speed" value="$(arg max_speed)"/>
+    <arg name="max_yaw_rate" value="$(arg max_yaw_rate)"/>
+  </include>
+
+  <!-- Navigation entry: map and localization mode remain runtime choices. -->
+  <include if="$(eval arg('workflow') == 'navigation')"
+           file="$(find vehicle_bringup)/launch/full_system.launch">
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module)"/>
+    <arg name="localization_mode" value="$(arg localization_mode)"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
+    <arg name="imu_data_topic" value="$(arg imu_data_topic)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+    <arg name="lever_x" value="$(arg lever_x)"/>
+    <arg name="lever_y" value="$(arg lever_y)"/>
+    <arg name="lever_z" value="$(arg lever_z)"/>
+    <arg name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+    <arg name="imu_alignment_max_error_s" value="$(arg imu_alignment_max_error_s)"/>
+    <arg name="gnss_clock_max_residual_s" value="$(arg gnss_clock_max_residual_s)"/>
+    <arg name="imu_heading_mode" value="$(arg imu_heading_mode)"/>
+    <arg name="imu_yaw_sign" value="$(arg imu_yaw_sign)"/>
+    <arg name="imu_true_north_offset_deg" value="$(arg imu_true_north_offset_deg)"/>
+    <arg name="imu_mount_yaw_deg" value="$(arg imu_mount_yaw_deg)"/>
+    <arg name="imu_roll_sign" value="$(arg imu_roll_sign)"/>
+    <arg name="imu_pitch_sign" value="$(arg imu_pitch_sign)"/>
+    <arg name="imu_gyro_z_sign" value="$(arg imu_gyro_z_sign)"/>
+    <arg name="imu_roll_zero_deg" value="$(arg imu_roll_zero_deg)"/>
+    <arg name="imu_pitch_zero_deg" value="$(arg imu_pitch_zero_deg)"/>
+    <arg name="imu_gyro_z_bias_dps" value="$(arg imu_gyro_z_bias_dps)"/>
+    <arg name="can_iface" value="$(arg can_iface)"/>
+    <arg name="speed_sign" value="$(arg speed_sign)"/>
+    <arg name="steer_sign" value="$(arg steer_sign)"/>
+    <arg name="feedback_sign" value="$(arg feedback_sign)"/>
+    <arg name="motor_feedback_gear_ratio" value="$(arg motor_feedback_gear_ratio)"/>
+    <arg name="max_speed" value="$(arg max_speed)"/>
+    <arg name="start_evaluator" value="$(arg start_evaluator)"/>
+    <arg name="load_vehicle_model" value="$(arg load_vehicle_model)"/>
+    <arg name="start_rviz" value="$(arg start_rviz)"/>
+  </include>
+
+  <!-- Live LIO-SAM mapping with CAN disabled. -->
+  <include if="$(eval arg('workflow') == 'live_mapping')"
+           file="$(find vehicle_bringup)/launch/mapping.launch">
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module)"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+    <arg name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+  </include>
+
+  <!-- Reproducible mapping dataset recording with CAN disabled. -->
+  <include if="$(eval arg('workflow') == 'mapping_record')"
+           file="$(find vehicle_bringup)/launch/record_mapping_bag.launch">
+    <arg name="project_root" value="$(arg project_root)"/>
+    <arg name="map_module" value="$(arg map_module)"/>
+    <arg name="gnss_port" value="$(arg gnss_port)"/>
+    <arg name="gnss_baud" value="$(arg gnss_baud)"/>
+    <arg name="imu_port" value="$(arg imu_port)"/>
+    <arg name="imu_baud" value="$(arg imu_baud)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+    <arg name="warmup_seconds" value="$(arg mapping_warmup_seconds)"/>
+    <arg name="topic_timeout_seconds" value="$(arg mapping_topic_timeout_seconds)"/>
+  </include>
+
+  <!-- Offline mapping uses recorded /tf_static by default. -->
+  <include if="$(eval arg('workflow') == 'offline_mapping')"
+           file="$(find vehicle_bringup)/launch/bag_mapping.launch">
+    <arg name="imu_time_offset_s" value="$(arg imu_time_offset_s)"/>
+    <arg name="imu_xyz" value="$(arg imu_xyz)"/>
+    <arg name="imu_ypr" value="$(arg imu_ypr)"/>
+    <arg name="lidar_xyz" value="$(arg lidar_xyz)"/>
+    <arg name="lidar_ypr" value="$(arg lidar_ypr)"/>
+  </include>
+</launch>

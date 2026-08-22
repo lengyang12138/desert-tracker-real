@@ -330,9 +330,9 @@ class FusionCfg:
     # 诊断时可设QX_ENABLE_LEVER_COMPENSATION=0，使CP临时退化为旧POS的天线点。
     # 如果关闭后坐标恢复正常，问题在杆臂/姿态标定或旧地图点位定义，不在经纬度转换。
     ENABLE_LEVER_COMPENSATION = _env_bool("QX_ENABLE_LEVER_COMPENSATION", True)
-    LEVER_X = _env_float("QX_LEVER_X", -0.08)#定了
-    LEVER_Y = _env_float("QX_LEVER_Y", 0.00)#定了
-    LEVER_Z = _env_float("QX_LEVER_Z", -0.99)#定了
+    LEVER_X = _env_float("QX_LEVER_X", -0.114)#定了
+    LEVER_Y = _env_float("QX_LEVER_Y", 0.004)#定了
+    LEVER_Z = _env_float("QX_LEVER_Z", -0.970)#定了
 
     # 【首轮保持默认False】GGA海拔可用于记录，但小范围斜坡上噪声较大；
     # 初次平地/小坡实验不启用相对Z坐标。
@@ -1847,7 +1847,7 @@ def main(init_ros_node=True):
     if init_ros_node:
         rospy.init_node("POS_qianxun_imu", anonymous=True)
     pub_ros_pose = rospy.Publisher("/bus/pose", geometry_msgs.msg.Pose2D, queue_size=10)
-    pub_ros_location = rospy.Publisher("/bus/location", std_msgs.msg.String, queue_size=10)
+    pub_ros_location = rospy.Publisher("/fusion_location", std_msgs.msg.String, queue_size=10)
     pub_ros_sensor = rospy.Publisher("/bus/sensor", std_msgs.msg.String, queue_size=10)
 
     ctx = proContext()

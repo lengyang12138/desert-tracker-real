@@ -148,7 +148,7 @@ class NavEvaluator(object):
         self.wheel_radius = max(
             1e-4, float(rospy.get_param('~wheel_radius', 0.181695)))
         self.wheel_separation = max(
-            1e-4, float(rospy.get_param('~wheel_separation', 1.27665)))
+            1e-4, float(rospy.get_param('~wheel_separation', 1.000)))
         # Real CAN feedback is normalized by feedback_sign at the hardware
         # boundary, so positive means forward in this evaluator.
         self.wheel_velocity_sign = float(rospy.get_param(
@@ -161,7 +161,7 @@ class NavEvaluator(object):
                     if d.startswith('nav_') and d[4:].isdigit()]
         self.run_count = max((int(d[4:]) for d in existing), default=0)
         self.last_status = None
-        self.vehicle_half_width = 0.64
+        self.vehicle_half_width = 0.60
         self.gt_traj = []
         self.gt_twist_traj = []
         self.reference_state_records = []
@@ -240,7 +240,7 @@ class NavEvaluator(object):
                          self._motor_feedback_cb, queue_size=200)
         rospy.Subscriber('/move_base/status', GoalStatusArray, self._status_cb)
         reference_state_topic = rospy.get_param(
-            '~reference_state_topic', '/bus/location')
+            '~reference_state_topic', '/fusion_location')
         rospy.Subscriber(reference_state_topic, String, self._reference_cb)
         vehicle_sensor_topic = rospy.get_param(
             '~vehicle_sensor_topic', '/bus/sensor')

@@ -11,6 +11,9 @@ import numpy as np
 import rosbag
 
 
+FUSION_LOCATION_TOPIC = "/fusion_location"
+
+
 def wrap(angle):
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
@@ -211,7 +214,6 @@ def main():
         description="Fit LIO-SAM map coordinates to Qianxun O-XYZ coordinates")
     parser.add_argument("bags", nargs="+")
     parser.add_argument("--output", required=True)
-    parser.add_argument("--qianxun-topic", default="/bus/location")
     parser.add_argument("--lio-topic", default="/lio_sam/mapping/path")
     parser.add_argument("--qianxun-time-offset", type=float, default=0.0)
     parser.add_argument("--max-time-diff", type=float, default=0.05)
@@ -223,7 +225,7 @@ def main():
 
     try:
         qianxun, lio, frame_metadata = read_samples(
-            args.bags, args.qianxun_topic, args.lio_topic,
+            args.bags, FUSION_LOCATION_TOPIC, args.lio_topic,
             args.qianxun_time_offset)
     except (OSError, rosbag.bag.ROSBagException) as exc:
         print("ERROR: cannot read bag: {}".format(exc), file=sys.stderr)

@@ -24,7 +24,7 @@ struct TerrainMap {
     float friction_coeff, track_width, cg_height;
     bool loaded;
     TerrainMap() : rows(0), cols(0), res(0), origin_x(0), origin_y(0),
-                   friction_coeff(0.4f), track_width(1.277f), cg_height(0.5f),
+                   friction_coeff(0.4f), track_width(1.000f), cg_height(0.5f),
                    loaded(false) {}
 };
 

@@ -1,0 +1,6 @@
+<launch>
+  <!-- Preferred offline mapping entry. Recorded /tf_static is used by default. -->
+  <include file="$(find vehicle_bringup)/config/real_vehicle.launch">
+    <arg name="workflow" value="offline_mapping"/>
+  </include>
+</launch>

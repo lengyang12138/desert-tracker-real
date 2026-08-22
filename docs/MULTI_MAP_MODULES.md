@@ -51,15 +51,15 @@ rosrun terrain_map_builder map_module.py create dune_b
 rosrun terrain_map_builder map_module.py configure dune_b --origin-lat 22.000000 --origin-lon 114.000000 --origin-alt 0.0 --yaw-enu-to-oxyz-deg 0.0
 ```
 
-`module.yaml` 的坐标参数优先于 `full_system.launch` 的同名默认参数，因而切换
+`module.yaml` 的坐标参数优先于底层启动默认值，因而切换
 模块时不会误用上一张地图的原点。
 
 ## 3. 采集与离线建图
 
 ```bash
-roslaunch vehicle_bringup record_mapping_bag.launch map_module:="$MAP_MODULE"
+roslaunch vehicle_bringup real_mapping_record.launch map_module:=site_a
 rosrun terrain_map_builder check_mapping_bag.py "bags/${MAP_MODULE}"/mapping_run_*.bag
-roslaunch vehicle_bringup bag_mapping.launch
+roslaunch vehicle_bringup offline_mapping.launch
 rosbag record -O "bags/${MAP_MODULE}/lio_result.bag" /lio_sam/mapping/path /lio_sam/mapping/odometry
 rosbag play --clock "bags/${MAP_MODULE}"/mapping_run_*.bag
 rosrun terrain_map_builder map_module.py save "$MAP_MODULE" --resolution 0.2
@@ -72,7 +72,7 @@ rosrun terrain_map_builder map_module.py save "$MAP_MODULE" --resolution 0.2
 
 ```bash
 rosrun terrain_map_builder align_qianxun_lio.py "bags/${MAP_MODULE}"/mapping_run_*.bag "bags/${MAP_MODULE}/lio_result.bag" --output "maps/${MAP_MODULE}/aligned/qianxun_lio_alignment.yaml"
-roslaunch terrain_map_builder align_lio_map.launch map_module:="$MAP_MODULE" translation_x:=【脚本输出】 translation_y:=【脚本输出】 yaw_deg:=【脚本输出】
+roslaunch terrain_map_builder align_lio_map.launch map_module:=site_a
 roslaunch terrain_map_builder build_planner_map.launch map_module:="$MAP_MODULE"
 rosrun terrain_map_builder map_module.py validate "$MAP_MODULE" --stage qianxun
 ```
@@ -88,19 +88,19 @@ rosrun terrain_map_builder map_module.py validate "$MAP_MODULE" --stage lio_sam
 千寻模式：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:=dune_a localization_mode:=qianxun
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=qianxun
 ```
 
 换到另一张地图只修改一个参数：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:=dune_b localization_mode:=qianxun
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_b localization_mode:=qianxun
 ```
 
 LIO-SAM/NDT 模式：
 
 ```bash
-roslaunch vehicle_bringup full_system.launch map_module:=dune_a localization_mode:=lio_sam
+roslaunch vehicle_bringup real_navigation.launch map_module:=site_a localization_mode:=lio_sam
 ```
 
 当前激活模块与文件指纹会锁存发布到 `/map_module/active`：
@@ -111,7 +111,7 @@ rostopic echo -n 1 /map_module/active
 
 ## 6. 评估隔离与地图指纹
 
-`full_system.launch` 默认启动评估器，输出路径自动按地图和定位模式隔离：
+`real_navigation.launch` 默认启动评估器，输出路径自动按地图和定位模式隔离：
 
 ```text
 results/dune_a/qianxun/nav_1/
