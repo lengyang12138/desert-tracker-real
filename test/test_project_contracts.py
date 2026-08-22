@@ -13,6 +13,14 @@ class ProjectContractTests(unittest.TestCase):
     def _path(self, *parts):
         return os.path.join(ROOT, *parts)
 
+    def test_catkin_toplevel_uses_loaded_workspace_macro(self):
+        with open(self._path("src", "CMakeLists.txt"),
+                  encoding="utf-8") as stream:
+            cmake = stream.read()
+        self.assertIn("find_package(catkin", cmake)
+        self.assertIn("catkin_workspace()", cmake)
+        self.assertNotIn("${catkin_EXTRAS_DIR}/toplevel.cmake", cmake)
+
     def test_runtime_output_directories_are_precreated(self):
         expected = (
             ("bags",),

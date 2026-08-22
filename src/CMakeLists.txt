@@ -9,5 +9,4 @@ find_package(catkin QUIET
 if(NOT catkin_FOUND)
   message(FATAL_ERROR "catkin not found; source /opt/ros/noetic/setup.bash")
 endif()
-include(${catkin_EXTRAS_DIR}/toplevel.cmake)
-
+catkin_workspace()
